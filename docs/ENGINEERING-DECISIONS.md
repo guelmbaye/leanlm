@@ -382,3 +382,144 @@ satisfied.
 before building against it. Where no published format exists, say `assumed` in
 the artifact — as `configs/scoring.yaml` did for six weeks, which is exactly why
 correcting it took an afternoon rather than a rewrite.
+
+---
+
+## EDB-029 — Asking the binary instead of assuming the flag
+
+Three abandoned runs on a Windows laptop, each interrupted after minutes of
+silence, traced to one line: `-no-cnv` is not a valid argument in llama.cpp
+build b10590. The flag that disables conversation mode has been spelled
+differently across releases, and this build rejects that spelling outright.
+
+**Why it presented as a hang rather than an error.** The backend caught the
+rejection and retried with the flag removed -- which is precisely what must not
+happen. Without it llama-cli enters conversation mode, waits for input, and the
+run ends at the timeout. A clear, immediate error had been converted into an
+unexplained five-minute wait. The retry was written to be resilient and its
+effect was to hide the diagnosis.
+
+**Decision.** The backend runs `llama-cli --help` once and builds its command
+from what the binary says it accepts:
+
+- the conversation flag is chosen from `--no-conversation`, `-no-cnv`,
+  `--single-turn`, `-st`, newest spelling first;
+- optional niceties (`--no-display-prompt`, `--simple-io`) are included only
+  when advertised, because they are worth having and not worth failing over;
+- sampling parameters are never conditional: they decide what the model
+  produces;
+- a rejected argument now raises **INF-125** naming the argument, instead of
+  being stripped.
+
+`leanlm doctor` prints which flags were detected, so the answer is visible
+before a request is ever made.
+
+**What this cost, and what made it slow to find.** The diagnostic that should
+have exposed it built its own, shorter command list: `--seed`, `--top-k`,
+`--top-p`, `--repeat-penalty` and `--simple-io` were omitted from what
+`--dry-run` printed. The offending flag *was* shown, but the discrepancy meant
+the printed command could not be trusted as the command that ran. Both are now
+built by one function, and a test compares them.
+
+**The rule.** When an external tool's interface can vary, ask it. `--help`
+costs one subprocess call at load time and removes a whole class of
+version-guessing from the code.
+
+---
+
+## EDB-030 — Two kinds of scaffolding, and why the validator was scoring them
+
+A run on Windows produced `grounding 0.0` and "5 sentences not supported by the
+excerpts" on a request where the model had made **no claim at all**. What the
+validator scored was scaffolding.
+
+**The tool's.** `llama-cli` b10590 is a chat application. It prints a banner, a
+command list and the prompt itself to stdout before generating, and
+`--no-display-prompt` is not honoured once that UI is up. `--single-turn` limits
+the exchange to one turn; it does not remove the wrapper.
+
+**The model's.** Qwen3.5 is a hybrid reasoning model. It opened a thinking block,
+spent the whole 128-token budget on it, and was cut off mid-thought. Nothing that
+could be called an answer was ever emitted.
+
+**Decision.** `packages/inference/cleaning.py` strips both, conservatively: if
+stripping would empty the text, the original is returned and the caller decides.
+Silently emptying a response is how a generation failure becomes an accuracy
+figure -- which is precisely what had happened, twelve probes at 0%.
+
+When nothing survives, the backend raises **INF-126** naming both causes and the
+configuration to change.
+
+**What the notes are for.** A run that needed scaffolding removed is a run whose
+configuration is not right yet, so the removal is reported rather than tidied
+away. The right answer here is not better stripping: it is the `llama-server`
+backend, which has no interactive wrapper, and disabling the reasoning mode.
+
+**The measurement this invalidates.** Every timing from that run. "first token
+36343 ms" was the banner appearing, not a token; "19 tok/s" counted banner text.
+A number measured through scaffolding measures the scaffolding.
+
+---
+
+## EDB-031 — UTF-8, and a parser held hostage by one character
+
+`leanlm speed` reported "no readable results" on a `llama-bench` table that was
+entirely correct. Two faults, one cause.
+
+**The cause.** llama.cpp writes UTF-8. Python decodes a subprocess with the
+platform default, which on Windows is the ANSI code page. `±` arrived as `Â±`.
+The clue had been visible for several runs already: llama-cli's banner rendered
+as `â–„â–„` in the captured output and nobody read it as an encoding signal.
+
+**Why it mattered beyond a parser.** The same stream carries the model's answer.
+Any accented character in a French reply was being corrupted the same way --
+silently, since a mangled word is still a word. Decoding is now pinned to UTF-8
+with `errors="replace"` wherever a subprocess is read: an answer must never be
+lost to a byte, and a byte must never be lost in silence.
+
+**The second fault, which the first exposed.** The row parser required the value
+to be followed by `±`. A parser that depends on one character surviving a decode
+is brittle by construction. The final cell is now read as "whatever is not a
+pipe", with the value and the deviation extracted from it separately.
+
+**And a defect found while testing that fix.** The first replacement matched
+`32.96` as a value of `32` with a deviation of `96` — inventing a dispersion the
+benchmark never reported. Reporting no dispersion is a gap; reporting a
+fabricated one is a lie about the measurement's precision. The pattern now
+requires a genuine separator between the two numbers, and a test covers the
+no-deviation case explicitly.
+
+**The rule.** When reading another program's output, pin the encoding and parse
+the shape, not the punctuation.
+
+---
+
+## EDB-032 — Saturation breaks the claim that rankings transfer
+
+Earlier in this project I told the user that relative rankings between model
+candidates survive a change of machine, even when absolute figures do not. That
+is true of a monotone scoring function. It is false of this one.
+
+`S_perf = min(TPS / 15, 1)` is **flat above the reference**. The consequence:
+
+| | 2B | 4B |
+|---|---|---|
+| on a 2-core laptop (7.0 / 3.5 tok/s) | **66.7** | 59.9 |
+| where both saturate | 82.6 | **82.9** |
+
+On slow hardware neither candidate saturates, the throughput term is
+proportional to speed, and the smaller model wins on it. On the evaluation
+machine both may clear 15 tok/s, at which point the term is identical for both,
+cancels, and the decision passes to accuracy -- which favours the larger model.
+
+The ranking does not merely shift. It inverts.
+
+`leanlm candidates` now detects this: when any candidate is below the reference,
+it re-scores with everything saturated and says plainly whether the winner would
+change. If it would, the output states that the ranking is hardware-dependent
+and that the choice must be made on hardware close to the profile.
+
+**The general form.** A ranking transfers across machines only where the scoring
+function is monotone in the thing the machine changes. A cap, a floor or a step
+anywhere in the rubric breaks that, and the break is invisible in the numbers
+themselves -- both models simply look slow.

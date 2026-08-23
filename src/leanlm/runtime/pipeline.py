@@ -45,8 +45,9 @@ class InferencePipeline:
         self.runtime_handlers = runtime_handlers
         self.resource_probe = resource_probe
 
-    def run(self, iec: InferenceExecutionContext,
-            machine: StateMachine) -> InferenceExecutionContext:
+    def run(self, iec: InferenceExecutionContext, machine: StateMachine,
+            *, stop_after: PipelineStage | None = None
+            ) -> InferenceExecutionContext:
         telemetry = Telemetry(self.bus, iec.session_id, self.resource_probe)
         for stage in STAGE_ORDER:
             handler = self._handler_for(stage)
@@ -69,6 +70,11 @@ class InferencePipeline:
                               code=error.record.code)
                 return iec
             iec = iec.with_stage(telemetry.records[-1])
+            if stop_after is not None and stage is stop_after:
+                # Deliberate early exit: the caller wants the artifacts built so
+                # far, not an answer. Used to hand someone the exact prompt a
+                # backend would receive.
+                return iec
         machine.transition(RuntimeState.COMPLETED)
         self.bus.emit(EventName.PIPELINE_COMPLETED, iec.session_id,
                       stages=len(iec.stages), total_ms=telemetry.total_ms())

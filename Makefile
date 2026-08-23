@@ -1,4 +1,4 @@
-.PHONY: help install install-optional install-all test lint ccm doctor ingest ask accuracy accuracy-fr score preflight provision provision-check measure-docker bench naive profile corpus baseline submission serve ci clean
+.PHONY: help install install-optional install-all test lint ccm doctor ingest ask speed accuracy accuracy-fr score preflight provision provision-check measure-docker bench naive profile corpus baseline submission serve ci clean
 
 PYTHON ?= python3
 PROFILE ?= development
@@ -13,6 +13,7 @@ help:
 	@echo "  make ingest        index datasets/enterprise"
 	@echo "  make ask Q='...'   ask a question"
 	@echo "  make serve         start the local workspace on 127.0.0.1:8770"
+	@echo "  make speed         raw model speed via llama-bench (30% of the score)"
 	@echo "  make accuracy      measure accuracy against ground truth (50% of the score)"
 	@echo "  make score         compute the ADTC score from the results"
 	@echo "  make naive         measure the same model with NO LeanLM layer"
@@ -60,6 +61,9 @@ serve:
 
 bench:
 	$(PYTHON) -m leanlm.apps.cli --profile benchmark bench --with-profile
+
+speed:
+	$(PYTHON) -m leanlm.apps.cli --profile benchmark speed
 
 accuracy:
 	$(PYTHON) -m leanlm.apps.cli --profile benchmark accuracy

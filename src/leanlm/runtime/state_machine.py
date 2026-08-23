@@ -32,9 +32,16 @@ _ALLOWED: dict[RuntimeState, tuple[RuntimeState, ...]] = {
     # is measured (scenario S5) and how a model swap happens mid-session.
     RuntimeState.READY: (RuntimeState.OPTIMIZING, RuntimeState.LOADING,
                          RuntimeState.IDLE, RuntimeState.FAILED),
-    RuntimeState.OPTIMIZING: (RuntimeState.RETRIEVING, RuntimeState.FAILED),
-    RuntimeState.RETRIEVING: (RuntimeState.PROMPT_READY, RuntimeState.FAILED),
-    RuntimeState.PROMPT_READY: (RuntimeState.INFERENCING, RuntimeState.FAILED),
+    # READY is reachable from any in-flight state: a request can be abandoned
+    # before inference, either by the caller or by a mode that prepares the
+    # prompt without generating. Returning to READY is what that means, and
+    # forcing it through IDLE would claim the model had been unloaded.
+    RuntimeState.OPTIMIZING: (RuntimeState.RETRIEVING, RuntimeState.READY,
+                              RuntimeState.FAILED),
+    RuntimeState.RETRIEVING: (RuntimeState.PROMPT_READY, RuntimeState.READY,
+                              RuntimeState.FAILED),
+    RuntimeState.PROMPT_READY: (RuntimeState.INFERENCING, RuntimeState.READY,
+                                RuntimeState.FAILED),
     RuntimeState.INFERENCING: (RuntimeState.VALIDATING, RuntimeState.FAILED),
     RuntimeState.VALIDATING: (RuntimeState.COMPLETED, RuntimeState.FAILED),
     RuntimeState.COMPLETED: (RuntimeState.READY, RuntimeState.IDLE, RuntimeState.FAILED),

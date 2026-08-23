@@ -435,3 +435,35 @@ class TestIngestReporting:
             assert first != second
         finally:
             engine.close()
+
+
+class TestAbandonedRequests:
+    """A request stopped before inference returns the runtime to READY.
+
+    Not IDLE: the model is still loaded, and saying otherwise would make the
+    next request pay a cold start it never took.
+    """
+
+    def test_ready_is_reachable_from_every_in_flight_state(self):
+        from leanlm.runtime.state_machine import RuntimeState, StateMachine
+        for state in (RuntimeState.OPTIMIZING, RuntimeState.RETRIEVING,
+                      RuntimeState.PROMPT_READY):
+            machine = StateMachine()
+            machine.transition(RuntimeState.LOADING)
+            machine.transition(RuntimeState.READY)
+            machine.transition(RuntimeState.OPTIMIZING)
+            while machine.state is not state:
+                nxt = {RuntimeState.OPTIMIZING: RuntimeState.RETRIEVING,
+                       RuntimeState.RETRIEVING: RuntimeState.PROMPT_READY}[machine.state]
+                machine.transition(nxt)
+            assert machine.transition(RuntimeState.READY) is RuntimeState.READY
+
+    def test_inference_still_cannot_be_skipped(self):
+        """The relaxation must not have opened a path around the model."""
+        from leanlm.runtime.state_machine import RuntimeState, StateMachine
+        machine = StateMachine()
+        machine.transition(RuntimeState.LOADING)
+        machine.transition(RuntimeState.READY)
+        machine.transition(RuntimeState.OPTIMIZING)
+        with pytest.raises(LeanLMError):
+            machine.transition(RuntimeState.COMPLETED)

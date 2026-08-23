@@ -33,6 +33,7 @@ from ...shared.clock import Stopwatch
 from ...shared.errors import inference_error, resource_error
 from ...shared.hashing import sha256_file
 from ...shared.text import DEFAULT_TOKEN_COUNTER, LlamaTokenCounter, TokenCounter
+from .cleaning import clean_generation
 from .models import GenerationResult, ModelBinding
 from .policies import GenerationPolicy
 
@@ -265,21 +266,90 @@ class LlamaCppBinaryBackend(InferenceBackend):
         self.binary = binary
         self.n_threads = n_threads or max(1, (os.cpu_count() or 2) - 1)
         self.n_gpu_layers = n_gpu_layers
+        self._help: str | None = None
 
-    def describe_command(self, prompt: str) -> str:
+    # Candidates for "do not enter conversation mode", newest spelling first.
+    # llama.cpp renames flags between builds: `-no-cnv` is rejected outright by
+    # b10590. Guessing wrong is not a small error -- the flag that disables
+    # conversation mode is the one standing between a completed request and a
+    # process waiting forever on stdin.
+    _NO_CONVERSATION_FLAGS = ("--no-conversation", "-no-cnv", "--single-turn", "-st")
+
+    # Flags worth having and safe to omit when a build does not know them.
+    _OPTIONAL_FLAGS = ("--no-display-prompt", "--simple-io")
+
+    def _help_text(self) -> str:
+        """What this binary says it accepts. Cached for the process lifetime."""
+        if self._help is None:
+            try:
+                # llama.cpp writes UTF-8. Python decodes a subprocess with the platform
+                # default, which on Windows is the ANSI code page: "±" arrives as "Â±" and any
+                # accented character in a generated answer is corrupted the same way. Decoding
+                # is pinned, and undecodable bytes are replaced rather than raising -- a model's
+                # answer must never be lost to a byte.
+                probe = subprocess.run(
+                    [self.binary, "--help"], capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=30)
+                self._help = (probe.stdout or "") + (probe.stderr or "")
+            except Exception:
+                self._help = ""
+        return self._help
+
+    def _supports(self, flag: str) -> bool:
+        help_text = self._help_text()
+        if not help_text:
+            return True     # no help available: assume it works, fail loudly if not
+        return re.search(rf"(?<![\w-]){re.escape(flag)}(?![\w-])", help_text) is not None
+
+    def supported_flags(self) -> dict[str, Any]:
+        """Reported by `leanlm doctor` and recorded with every measurement."""
+        conversation = next(
+            (f for f in self._NO_CONVERSATION_FLAGS if self._supports(f)), None)
+        return {
+            "no_conversation": conversation,
+            "optional": [f for f in self._OPTIONAL_FLAGS if self._supports(f)],
+            "help_available": bool(self._help_text()),
+        }
+
+    def _build_command(self, prompt_path: str) -> list[str]:
+        """The one place the invocation is defined.
+
+        `describe_command` used to build its own shorter list, so the command
+        offered for diagnosis omitted --seed, --top-k, --top-p, --repeat-penalty
+        and --simple-io. A diagnostic that shows something other than what runs
+        can only mislead: the argument that breaks is exactly the one it hides.
+        """
+        command = [
+            self.binary, "-m", self.binding.path, "-f", prompt_path,
+            "-n", str(self.policy.max_output_tokens),
+            "-c", str(self.binding.context_tokens),
+            "-t", str(self.n_threads),
+            "--temp", str(self.policy.temperature),
+            "--top-k", str(self.policy.top_k),
+            "--top-p", str(self.policy.top_p),
+            "--repeat-penalty", str(self.policy.repeat_penalty),
+            "--seed", str(self.policy.seed),
+            "-ngl", str(self.n_gpu_layers),
+        ]
+        command.extend(f for f in self._OPTIONAL_FLAGS if self._supports(f))
+
+        # Without one of these, llama-cli enters conversation mode whenever the
+        # model carries a chat template -- which every instruct model does -- and
+        # waits on stdin instead of completing the prompt.
+        conversation = next(
+            (f for f in self._NO_CONVERSATION_FLAGS if self._supports(f)), None)
+        if conversation:
+            command.append(conversation)
+        return command
+
+    def describe_command(self, prompt: str, prompt_path: str = "") -> str:
         """The exact invocation, for running by hand.
 
         When a request appears to hang, the fastest diagnosis is to run the same
         command in a terminal: attached to a tty, llama.cpp flushes every token,
-        so anything wrong becomes visible immediately.
+        so a stall becomes visible where it happens.
         """
-        parts = [
-            self.binary, "-m", self.binding.path, "-f", "<prompt file>",
-            "-n", str(self.policy.max_output_tokens),
-            "-c", str(self.binding.context_tokens),
-            "-t", str(self.n_threads), "--temp", str(self.policy.temperature),
-            "-ngl", str(self.n_gpu_layers), "--no-display-prompt", "-no-cnv",
-        ]
+        parts = self._build_command(prompt_path or "<prompt file>")
         return " ".join(f'"{p}"' if " " in p else p for p in parts)
 
     def load(self) -> None:
@@ -325,26 +395,8 @@ class LlamaCppBinaryBackend(InferenceBackend):
         prompt_file.close()
         self._last_prompt_file = prompt_file.name
 
-        command = [
-            self.binary, "-m", self.binding.path, "-f", prompt_file.name,
-            "-n", str(self.policy.max_output_tokens),
-            "-c", str(self.binding.context_tokens),
-            "-t", str(self.n_threads),
-            "--temp", str(self.policy.temperature),
-            "--top-k", str(self.policy.top_k),
-            "--top-p", str(self.policy.top_p),
-            "--repeat-penalty", str(self.policy.repeat_penalty),
-            "--seed", str(self.policy.seed),
-            "-ngl", str(self.n_gpu_layers),
-            "--no-display-prompt", "--simple-io",
-            # Without this, llama-cli enters conversation mode whenever the model
-            # carries a chat template -- which every instruct model does -- and
-            # waits on stdin instead of completing the prompt. The symptom is a
-            # run that produces nothing and ends at the timeout.
-            "-no-cnv",
-        ]
-        # `--log-disable` used to be here. It also suppressed the timing lines
-        # this backend parses out of stderr, so every run reported 0 tok/s.
+        command = self._build_command(prompt_file.name)
+
         watch = Stopwatch()
         # Streamed rather than captured in one go. On a slow CPU a request takes
         # minutes, and `subprocess.run` gives the caller nothing until it ends:
@@ -355,6 +407,9 @@ class LlamaCppBinaryBackend(InferenceBackend):
         process = subprocess.Popen(
             command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL, text=True, bufsize=1,
+            # See the note on the --help probe: the platform default mangles
+            # UTF-8, and this stream carries the answer itself.
+            encoding="utf-8", errors="replace",
         )
 
         errors: list[str] = []
@@ -376,13 +431,15 @@ class LlamaCppBinaryBackend(InferenceBackend):
 
         def _heartbeat() -> None:
             phase = "starting"
+            first = True
             while not heartbeat_stop.wait(1.0):
                 recent = "".join(errors[-40:]).lower()
                 for needle, label in self._PHASES:
                     if needle in recent:
                         phase = label
                 if on_progress:
-                    on_progress(watch.elapsed_ms / 1000.0, phase)
+                    on_progress(watch.elapsed_ms / 1000.0, phase, first)
+                    first = False
 
         if on_progress:
             ticker = threading.Thread(target=_heartbeat, daemon=True)
@@ -444,26 +501,38 @@ class LlamaCppBinaryBackend(InferenceBackend):
         stderr = "".join(errors)
 
         if returncode != 0:
-            if "-no-cnv" in command and (
-                    "unknown argument" in stderr.lower()
-                    or "invalid argument" in stderr.lower()):
-                # Flags come and go between llama.cpp builds. Retry once without
-                # the one most likely to be missing rather than failing the run.
-                retry = [arg for arg in command if arg != "-no-cnv"]
-                completed = subprocess.run(retry, capture_output=True, text=True,
-                                           timeout=self.policy.timeout_s,
-                                           stdin=subprocess.DEVNULL)
-                chunks, stderr, returncode = ([completed.stdout], completed.stderr,
-                                              completed.returncode)
-            if returncode != 0:
+            rejected = re.search(r"invalid argument:\s*(\S+)", stderr)
+            if rejected:
                 raise inference_error(
-                    "INF-123", "llama-cli returned a non-zero exit code",
+                    "INF-125",
+                    f"llama-cli rejected the argument {rejected.group(1)}",
                     capability="inference", stage="model_inference",
-                    recommended_action="run the command manually to inspect the error",
+                    recommended_action=(
+                        "this build does not accept that flag. LeanLM asks the "
+                        "binary what it supports via --help, so this means the "
+                        "probe failed or the build is unusual: run "
+                        "`leanlm doctor` to see which flags were detected"),
                     stderr=stderr[-400:],
                 )
+            raise inference_error(
+                "INF-123", "llama-cli returned a non-zero exit code",
+                capability="inference", stage="model_inference",
+                recommended_action="run the command manually to inspect the error",
+                stderr=stderr[-400:],
+            )
 
-        text = "".join(chunks).strip()
+        raw = "".join(chunks).strip()
+        text, cleaning_notes = clean_generation(raw, prompt)
+        if raw and not text:
+            raise inference_error(
+                "INF-126", "the model produced no answer, only scaffolding",
+                capability="inference", stage="model_inference",
+                recommended_action=(
+                    "; ".join(cleaning_notes) or
+                    "the output contained no answer once the tool banner and "
+                    "reasoning block were removed"),
+                raw_output=raw[-600:],
+            )
         if not text:
             # An empty generation is a failure, not an answer. Returning it
             # silently produced a run that reported "(no answer)", scored 0% on
@@ -488,6 +557,8 @@ class LlamaCppBinaryBackend(InferenceBackend):
         if first_ms is None:
             first_ms = total
 
+        if cleaning_notes:
+            self.last_cleaning_notes = tuple(cleaning_notes)
         return GenerationResult(
             text=text, backend=self.name, generated_tokens=generated,
             prompt_tokens=DEFAULT_TOKEN_COUNTER.count(prompt),

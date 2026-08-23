@@ -140,12 +140,17 @@ class TestBinaryBackendInvocation:
         result = backend.generate("prompt")
         return record.read_text(encoding="utf-8").splitlines(), result
 
-    def test_conversation_mode_is_disabled(self, tmp_path):
+    def test_conversation_mode_is_disabled_when_the_build_allows_it(self, tmp_path):
         """Every instruct model carries a chat template, and llama-cli switches
         to conversation mode when it sees one -- then waits on stdin instead of
-        completing the prompt."""
-        argv, _ = self._invoke(tmp_path)
-        assert "-no-cnv" in argv
+        completing the prompt.
+
+        Which flag does it is a property of the build, not a constant: this fake
+        advertises no --help, so nothing is sent and the run still completes.
+        """
+        argv, result = self._invoke(tmp_path)
+        assert result.text == "an answer"
+        assert not any(flag in argv for flag in ("-cnv", "--conversation"))
 
     def test_logging_is_not_disabled(self, tmp_path):
         """--log-disable also suppressed the timing lines this backend parses,
@@ -301,7 +306,8 @@ class TestProgressHeartbeat:
             "sleep 2.2\n"
             "printf 'answer\\n'\n"))
         ticks: list[tuple[float, str]] = []
-        backend.generate("prompt", on_progress=lambda s, p: ticks.append((s, p)))
+        backend.generate("prompt",
+                         on_progress=lambda s, p, first=False: ticks.append((s, p)))
         assert ticks, "no heartbeat while the binary was silent"
         assert ticks[0][0] >= 1.0
 
@@ -314,7 +320,8 @@ class TestProgressHeartbeat:
             "sleep 1.3\n"
             "printf 'answer\\n'\n"))
         phases = []
-        backend.generate("prompt", on_progress=lambda s, p: phases.append(p))
+        backend.generate("prompt",
+                         on_progress=lambda s, p, first=False: phases.append(p))
         assert "reading the model file" in phases
         assert "processing the prompt" in phases
 
@@ -343,6 +350,11 @@ class TestPromptDelivery:
     """
 
     def _echo_binary(self, tmp_path):
+        """Copies the prompt file aside rather than echoing it.
+
+        Echoing would be stripped by the output cleaner -- correctly, since an
+        echoed prompt is not an answer -- so delivery is checked on the copy.
+        """
         import stat as stat_module
 
         from leanlm.packages.inference.backends import LlamaCppBinaryBackend
@@ -350,7 +362,8 @@ class TestPromptDelivery:
         fake.write_text(
             "#!/usr/bin/env bash\n"
             'while [ $# -gt 0 ]; do [ "$1" = "-f" ] && f="$2"; shift; done\n'
-            'cat "$f"\n',
+            f'cp "$f" "{tmp_path}/delivered.txt"\n'
+            "printf 'an answer\\n'\n",
             encoding="utf-8")
         fake.chmod(fake.stat().st_mode | stat_module.S_IEXEC)
         model = tmp_path / "m.gguf"
@@ -362,7 +375,9 @@ class TestPromptDelivery:
     def test_a_multiline_prompt_arrives_intact(self, tmp_path):
         backend = self._echo_binary(tmp_path)
         prompt = 'Rules:\n1. Use only the excerpts.\n\n### Question\nWhat "now"?'
-        assert backend.generate(prompt).text.strip() == prompt.strip()
+        backend.generate(prompt)
+        delivered = (tmp_path / "delivered.txt").read_text(encoding="utf-8")
+        assert delivered.strip() == prompt.strip()
 
     def test_the_prompt_file_is_removed_afterwards(self, tmp_path):
         import os
@@ -373,5 +388,133 @@ class TestPromptDelivery:
     def test_the_command_can_be_shown_without_running_it(self, tmp_path):
         backend = self._echo_binary(tmp_path)
         command = backend.describe_command("anything")
-        assert "-no-cnv" in command
         assert "-f" in command
+        assert "-m" in command
+
+
+class TestDiagnosticFidelity:
+    """The command offered for diagnosis must be the command that runs.
+
+    `describe_command` used to build its own shorter list, omitting --seed,
+    --top-k, --top-p, --repeat-penalty and --simple-io. If one of those is what
+    a given llama.cpp build rejects, the diagnostic hides the very argument
+    responsible.
+    """
+
+    def _backend(self, tmp_path):
+        from leanlm.packages.inference.backends import LlamaCppBinaryBackend
+        model = tmp_path / "m.gguf"
+        model.write_bytes(b"GGUF" + b"\0" * 40)
+        return LlamaCppBinaryBackend(
+            ModelBinding(model_id="m", path=str(model)), GenerationPolicy(),
+            binary="llama-cli")
+
+    def test_the_shown_command_matches_the_built_one(self, tmp_path):
+        backend = self._backend(tmp_path)
+        built = backend._build_command("/tmp/prompt.txt")
+        shown = backend.describe_command("prompt", "/tmp/prompt.txt")
+        for argument in built:
+            assert argument in shown, argument
+
+    def test_every_sampling_argument_is_visible(self, tmp_path):
+        """The sampling parameters are unconditional: they decide what the model
+        produces, so a diagnostic that omits them shows a different run."""
+        shown = self._backend(tmp_path).describe_command("p", "/tmp/p.txt")
+        for argument in ("--seed", "--top-k", "--top-p", "--repeat-penalty",
+                         "-n", "-c", "-t"):
+            assert argument in shown, argument
+
+    def test_the_first_progress_tick_is_newline_terminated(self):
+        """A line rewritten with \r can vanish from a copied transcript, which
+        makes a working run look like silence."""
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[2]
+                  / "src/leanlm/apps/cli.py").read_text(encoding="utf-8")
+        assert 'terminator = "\\n" if first else ""' in source
+
+
+class TestFlagProbing:
+    """Ask the binary what it accepts; do not assume across builds.
+
+    llama.cpp renames flags between releases. Build b10590 rejects `-no-cnv`
+    outright, and the previous behaviour -- retry with the flag removed -- was
+    worse than the failure: without it llama-cli enters conversation mode and
+    waits on stdin, so a clear error became an unexplained hang.
+    """
+
+    def _binary(self, tmp_path, help_text: str, rejects: tuple[str, ...] = ()):
+        import stat as stat_module
+
+        from leanlm.packages.inference.backends import LlamaCppBinaryBackend
+        checks = "\n".join(
+            f'    {flag}) echo "error: invalid argument: {flag}" >&2; exit 1 ;;'
+            for flag in rejects)
+        fake = tmp_path / "cli"
+        fake.write_text(
+            "#!/usr/bin/env bash\n"
+            'if [ "$1" = "--help" ]; then\n'
+            f"cat <<'HELP'\n{help_text}\nHELP\n"
+            "exit 0\nfi\n"
+            'for a in "$@"; do\n  case "$a" in\n'
+            f"{checks}\n"
+            "  esac\ndone\n"
+            "printf 'an answer\\n'\n",
+            encoding="utf-8")
+        fake.chmod(fake.stat().st_mode | stat_module.S_IEXEC)
+        model = tmp_path / "m.gguf"
+        model.write_bytes(b"GGUF" + b"\0" * 40)
+        return LlamaCppBinaryBackend(
+            ModelBinding(model_id="m", path=str(model)), GenerationPolicy(),
+            binary=str(fake))
+
+    def test_the_modern_spelling_is_chosen_when_offered(self, tmp_path):
+        backend = self._binary(
+            tmp_path, "  --no-conversation   non-interactive", rejects=("-no-cnv",))
+        assert backend.supported_flags()["no_conversation"] == "--no-conversation"
+        assert backend.generate("prompt").text == "an answer"
+
+    def test_the_older_spelling_still_works(self, tmp_path):
+        backend = self._binary(tmp_path, "  -no-cnv   non-interactive")
+        assert backend.supported_flags()["no_conversation"] == "-no-cnv"
+
+    def test_an_unsupported_optional_flag_is_dropped(self, tmp_path):
+        """--simple-io is worth having and not worth failing over."""
+        backend = self._binary(
+            tmp_path, "  --no-conversation\n  --no-display-prompt",
+            rejects=("--simple-io",))
+        command = backend._build_command("/tmp/p.txt")
+        assert "--simple-io" not in command
+        assert "--no-display-prompt" in command
+
+    def test_a_rejected_argument_is_named_rather_than_stripped(self, tmp_path):
+        """Removing the flag and retrying re-enabled conversation mode, turning
+        a clear error into a hang."""
+        backend = self._binary(tmp_path, "  --no-display-prompt",
+                               rejects=("--no-display-prompt",))
+        with pytest.raises(LeanLMError) as excinfo:
+            backend.generate("prompt")
+        record = excinfo.value.record
+        assert record.code == "INF-125"
+        assert "--no-display-prompt" in record.message
+
+    def test_an_unreadable_help_does_not_block_the_run(self, tmp_path):
+        import stat as stat_module
+
+        from leanlm.packages.inference.backends import LlamaCppBinaryBackend
+        fake = tmp_path / "quiet"
+        fake.write_text("#!/usr/bin/env bash\nprintf 'an answer\\n'\n",
+                        encoding="utf-8")
+        fake.chmod(fake.stat().st_mode | stat_module.S_IEXEC)
+        model = tmp_path / "m.gguf"
+        model.write_bytes(b"GGUF" + b"\0" * 40)
+        backend = LlamaCppBinaryBackend(
+            ModelBinding(model_id="m", path=str(model)), GenerationPolicy(),
+            binary=str(fake))
+        assert backend.generate("prompt").text == "an answer"
+
+    def test_the_probe_is_cached(self, tmp_path):
+        backend = self._binary(tmp_path, "  --no-conversation")
+        backend.supported_flags()
+        first = backend._help
+        backend.supported_flags()
+        assert backend._help is first

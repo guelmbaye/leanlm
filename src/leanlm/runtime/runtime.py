@@ -232,7 +232,9 @@ class LeanLMRuntime:
 
     # -- inference ----------------------------------------------------------
     def ask(self, question: str, *, session: Session | None = None,
-            check_contract: bool = True) -> InferenceExecutionContext:
+            check_contract: bool = True,
+            stop_after: PipelineStage | None = None
+            ) -> InferenceExecutionContext:
         if not question or not question.strip():
             raise input_error(
                 "RT-001", "the question is empty", capability="runtime",
@@ -249,7 +251,7 @@ class LeanLMRuntime:
         guard = OfflineGuard(enabled=self.enforce_offline, strict=True)
         try:
             with guard:
-                iec = self.pipeline.run(iec, self.machine)
+                iec = self.pipeline.run(iec, self.machine, stop_after=stop_after)
         finally:
             trace = dict(iec.trace)
             trace["offline"] = guard.report()
@@ -264,6 +266,12 @@ class LeanLMRuntime:
         if iec.metrics is not None:
             self.corpus.record_metrics(request_id, session.session_id, iso_now(),
                                        iec.metrics.to_dict())
+        if stop_after is not None:
+            # Abandoned before inference: back to READY, with the model still
+            # loaded. reset() would have claimed otherwise.
+            if self.machine.state is not RuntimeState.READY:
+                self.machine.transition(RuntimeState.READY)
+            return iec
         if check_contract:
             violations = verify_dic(iec)
             if violations:

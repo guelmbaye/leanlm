@@ -356,6 +356,47 @@ def rank_candidates(candidates: list[Candidate],
                   key=lambda row: -row["total"])
 
 
+def ranking_is_hardware_dependent(rows: list[dict[str, Any]],
+                                  policy: ScoringPolicy | None = None
+                                  ) -> dict[str, Any]:
+    """Would a faster machine change the order?
+
+    I told the user earlier that relative rankings between candidates survive a
+    change of machine. That is wrong here, and the reason is saturation:
+    `min(TPS / 15, 1)` is flat above the reference. On slow hardware no
+    candidate saturates and the smaller model wins on throughput alone; on the
+    evaluation machine both may saturate, at which point the term cancels and
+    accuracy -- which favours the larger model -- decides.
+
+    So a ranking taken on hardware where nobody saturates cannot be trusted to
+    hold where somebody does.
+    """
+    policy = policy or ScoringPolicy()
+    unsaturated = [r for r in rows if not r["throughput_saturated"]]
+    if len(rows) < 2 or not unsaturated:
+        return {"hardware_dependent": False, "unsaturated": [], "flips": []}
+
+    # Re-score with every candidate saturated: the best case a faster machine
+    # can produce.
+    saturated_totals = []
+    for row in rows:
+        without_throughput = row["total"] - row["throughput"]
+        saturated_totals.append(
+            (row["name"], round(without_throughput
+                                + policy.throughput_weight * 100, 1)))
+    best_now = rows[0]["name"]
+    best_if_fast = max(saturated_totals, key=lambda item: item[1])[0]
+
+    return {
+        "hardware_dependent": best_now != best_if_fast,
+        "unsaturated": [r["name"] for r in unsaturated],
+        "reference_tps": policy.tps_reference,
+        "winner_here": best_now,
+        "winner_if_all_saturate": best_if_fast,
+        "saturated_totals": saturated_totals,
+    }
+
+
 def render_candidates(rows: list[dict[str, Any]]) -> str:
     lines = ["| model | acc | tok/s | peak | 50% acc | 30% tp | 20% eff | total |",
              "|---|---|---|---|---|---|---|---|"]
@@ -370,6 +411,24 @@ def render_candidates(rows: list[dict[str, Any]]) -> str:
     lines.append("")
     lines.append("  * below the 15 tok/s reference: every token per second short "
                  "costs 2 points")
+
+    analysis = ranking_is_hardware_dependent(rows)
+    if analysis["unsaturated"]:
+        lines.append("")
+        lines.append(f"  {', '.join(analysis['unsaturated'])} did not reach "
+                     f"{analysis['reference_tps']:.0f} tok/s here.")
+        if analysis["hardware_dependent"]:
+            lines.append(f"  THIS RANKING IS HARDWARE-DEPENDENT: on a machine "
+                         f"where every candidate")
+            lines.append(f"  saturates, {analysis['winner_if_all_saturate']} wins "
+                         f"instead of {analysis['winner_here']}. Throughput is")
+            lines.append("  flat above the reference, so the term cancels and "
+                         "accuracy decides.")
+            lines.append("  Measure on hardware close to the profile before "
+                         "choosing.")
+        else:
+            lines.append(f"  {analysis['winner_here']} would still lead if every "
+                         "candidate saturated.")
     if any(not row["measured"] for row in rows):
         lines.append("  (est.) estimated, not measured. Replace with real numbers "
                      "before deciding.")

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -89,6 +90,30 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     found = [n for n, p in binaries.items() if p]
     if found:
         lines.append(f"  llama.cpp binaries: {', '.join(found)}")
+        # Which flags this build accepts, asked rather than assumed. `-no-cnv`
+        # is rejected outright by some builds, and getting it wrong leaves the
+        # process waiting on stdin instead of answering.
+        try:
+            from ..packages.inference.backends import LlamaCppBinaryBackend
+            from ..packages.inference.models import ModelBinding
+            from ..packages.inference.policies import GenerationPolicy
+            probe = LlamaCppBinaryBackend(ModelBinding(model_id="probe", path=""),
+                                          GenerationPolicy())
+            flags = probe.supported_flags()
+            if not flags["help_available"]:
+                lines.append("                     flags: --help unreadable; "
+                             "arguments will be sent unverified")
+            elif flags["no_conversation"]:
+                lines.append(f"                     flags: "
+                             f"{flags['no_conversation']} accepted"
+                             + (f", {', '.join(flags['optional'])}"
+                                if flags["optional"] else ""))
+            else:
+                lines.append("                     flags: no way to disable "
+                             "conversation mode was detected; a request may wait "
+                             "on stdin")
+        except Exception:
+            pass
     else:
         lines.append("  llama.cpp binaries: MISSING -- none of llama-bench, "
                      "llama-cli, llama-server on PATH")
@@ -203,7 +228,10 @@ def cmd_ask(args: argparse.Namespace) -> int:
         validation = iec.validation
         if response is not None and response.is_simulated:
             print("!! SIMULATED BACKEND -- no model produced this answer\n")
-        if not streamed:
+        # Whether anything streamed is observed, never assumed: only the
+        # subprocess backend emits tokens, and taking the hook's presence as
+        # proof printed the sources and the verdict with no answer between them.
+        if not streamed["started"]:
             print(response.text if response else "(no answer)")
         print()
         if iec.evidence:
@@ -235,33 +263,54 @@ def _show_backend_command(runtime, question: str) -> int:
     the fastest diagnosis available: attached to a tty llama.cpp flushes every
     token, so a stall becomes visible at the point it happens.
     """
+    from ..contracts.iec import PipelineStage
+    from ..shared.config import workdir
+
     runtime.load()
     backend = runtime.backend
     if not hasattr(backend, "describe_command"):
         print(f"the {backend.name} backend runs no external command",
               file=sys.stderr)
         return EXIT_ERROR
-    print(backend.describe_command(question))
+
+    # Build the real prompt: the whole point is to hand over the exact input the
+    # backend would receive, not an approximation of it.
+    iec = runtime.ask(question, stop_after=PipelineStage.PROMPT_ASSEMBLY,
+                      check_contract=False)
+    if iec.prompt is None:
+        print("the pipeline produced no prompt", file=sys.stderr)
+        for error in iec.errors:
+            print(f"  [{error.code}] {error.message}", file=sys.stderr)
+        return EXIT_ERROR
+
+    path = workdir() / "last_prompt.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(iec.prompt.rendered, encoding="utf-8", newline="\n")
+
+    print(backend.describe_command(iec.prompt.rendered, str(path)))
     print()
-    print("  The prompt is written to a temporary file and passed with -f.")
-    print("  To reproduce by hand, put any text in a file and point -f at it.")
+    print(f"  prompt      : {path} ({iec.prompt.prompt_tokens} tokens, "
+          f"{len(iec.evidence)} excerpts)")
+    print(f"  expect      : about {iec.prompt.prompt_tokens / 30:.0f}s of prompt "
+          "processing, then generation")
+    print("  run it as printed. Attached to a terminal llama.cpp flushes every")
+    print("  token, so a stall is visible where it happens.")
     return EXIT_OK
 
 
-def _install_stream(runtime, *, quiet: bool) -> bool:
+def _install_stream(runtime, *, quiet: bool) -> dict:
     """Echo generated text as it arrives, and say what is happening first.
 
     On a two-core laptop a request takes minutes. Without this the terminal is
     silent throughout and the only way to tell a working run from a hung one is
     to interrupt it -- which is exactly what happened.
     """
+    state = {"started": False}
     if quiet:
-        return False
+        return state
     capability = runtime.registry.get("CAP-005")
     if capability is None:
-        return False
-
-    state = {"started": False}
+        return state
 
     def on_token(chunk: str) -> None:
         if not state["started"]:
@@ -271,11 +320,14 @@ def _install_stream(runtime, *, quiet: bool) -> bool:
         sys.stdout.write(chunk)
         sys.stdout.flush()
 
-    def on_progress(elapsed_s: float, phase: str) -> None:
+    def on_progress(elapsed_s: float, phase: str, first: bool = False) -> None:
         # Overwritten in place on stderr, so it never lands in piped output.
+        # The first tick ends with a newline: a line rewritten with \r can vanish
+        # from a copied transcript, which makes a working run look like silence.
         if state["started"]:
             return
-        sys.stderr.write(f"\r  {phase} ... {elapsed_s:.0f}s")
+        terminator = "\n" if first else ""
+        sys.stderr.write(f"\r  {phase} ... {elapsed_s:.0f}s{terminator}")
         sys.stderr.flush()
 
     capability.on_token = on_token
@@ -283,7 +335,7 @@ def _install_stream(runtime, *, quiet: bool) -> bool:
     backend = runtime.backend.describe().get("backend", "?")
     print(f"  {backend}: a two-core laptop takes minutes before the first token; "
           f"Ctrl-C to stop", file=sys.stderr)
-    return True
+    return state
 
 
 def cmd_bench(args: argparse.Namespace) -> int:
@@ -580,6 +632,27 @@ def cmd_submission(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_speed(args: argparse.Namespace) -> int:
+    """Raw model speed from llama-bench, without LeanLM in the path."""
+    from ..benchmarks.speed import measure, render
+
+    profile = load_profile(args.profile)
+    model_path = args.model or str(profile.model.get("path", ""))
+    threads = args.threads or int((profile.memory or {}).get("n_threads") or 0) \
+        or (os.cpu_count() or 4)
+    try:
+        result = measure(model_path, threads=threads,
+                         prompt_tokens=args.prompt_tokens,
+                         generated_tokens=args.generated_tokens)
+    except LeanLMError as error:
+        return _fail(error)
+    if args.json:
+        _print(result, True)
+    else:
+        print(render(result))
+    return EXIT_OK
+
+
 def cmd_candidates(args: argparse.Namespace) -> int:
     """Rank model candidates by what the rubric rewards."""
     from ..benchmarks.scoring import (Candidate, ScoringPolicy, rank_candidates,
@@ -819,6 +892,13 @@ def build_parser() -> argparse.ArgumentParser:
     score.add_argument("--results", default=None)
     score.add_argument("--accuracy", default=None)
     score.set_defaults(func=cmd_score)
+
+    speed = sub.add_parser(
+        "speed", help="measure raw model speed with llama-bench")
+    speed.add_argument("--threads", type=int, default=None)
+    speed.add_argument("--prompt-tokens", type=int, default=128)
+    speed.add_argument("--generated-tokens", type=int, default=32)
+    speed.set_defaults(func=cmd_speed)
 
     candidates = sub.add_parser(
         "candidates", help="rank model candidates against the rubric")

@@ -119,3 +119,94 @@ class TestFailurePath:
         assert iec.errors
         assert iec.errors[0].code == "TEST-001"
         assert iec.metrics is not None
+
+
+class TestPrepareWithoutGenerating:
+    """Stopping after prompt assembly, to hand over the exact backend input.
+
+    Added while diagnosing a run that appeared to hang on a two-core laptop. The
+    first version of the diagnostic printed `-f "<prompt file>"` and left the
+    reader to reconstruct the prompt -- which is precisely the input that might
+    be causing the problem.
+    """
+
+    def test_the_pipeline_stops_where_asked(self, runtime):
+        from leanlm.contracts.iec import PipelineStage
+        iec = runtime.ask(QUESTION, stop_after=PipelineStage.PROMPT_ASSEMBLY,
+                          check_contract=False)
+        assert iec.prompt is not None
+        assert iec.response is None
+        assert "model_inference" not in iec.completed_stages
+
+    def test_the_prompt_is_the_one_the_backend_would_receive(self, runtime):
+        from leanlm.contracts.iec import PipelineStage
+        prepared = runtime.ask(QUESTION, stop_after=PipelineStage.PROMPT_ASSEMBLY,
+                               check_contract=False)
+        complete = runtime.ask(QUESTION)
+        assert prepared.prompt.rendered == complete.prompt.rendered
+
+    def test_the_runtime_is_usable_afterwards(self, runtime):
+        """An early exit must not leave the state machine mid-cycle."""
+        from leanlm.contracts.iec import PipelineStage
+        runtime.ask(QUESTION, stop_after=PipelineStage.PROMPT_ASSEMBLY,
+                    check_contract=False)
+        iec = runtime.ask(QUESTION)
+        assert iec.response is not None
+        assert verify_dic(iec) == ()
+
+    def test_evidence_is_already_selected(self, runtime):
+        from leanlm.contracts.iec import PipelineStage
+        iec = runtime.ask(QUESTION, stop_after=PipelineStage.PROMPT_ASSEMBLY,
+                          check_contract=False)
+        assert iec.evidence
+
+
+class TestAnswerIsAlwaysShown:
+    """The answer must reach the reader whatever the backend does.
+
+    Observed with the llama-server backend: the sources and the verdict printed
+    with nothing between them. The CLI had assumed that installing a token hook
+    meant tokens would stream, and only the subprocess backend emits any.
+    """
+
+    def test_streaming_state_starts_unstarted(self, runtime):
+        from leanlm.apps.cli import _install_stream
+        state = _install_stream(runtime, quiet=False)
+        assert state["started"] is False
+
+    def test_a_quiet_run_reports_nothing_streamed(self, runtime):
+        from leanlm.apps.cli import _install_stream
+        assert _install_stream(runtime, quiet=True)["started"] is False
+
+    def test_a_backend_without_a_token_hook_still_answers(self, runtime):
+        """The simulated backend emits no tokens; the answer exists regardless."""
+        iec = runtime.ask(QUESTION)
+        assert iec.response is not None
+        assert iec.response.text.strip()
+
+
+class TestOutOfProcessMemory:
+    """Memory measured in this process says nothing about a model in another.
+
+    With llama-server the run reported a 32 MB peak while a 1.2 GB model was
+    resident in the server. Efficiency is 20% of the ADTC score; a figure that
+    omits the model measures nothing about the model.
+    """
+
+    def test_an_out_of_process_backend_is_flagged(self, runtime):
+        iec = runtime.ask(QUESTION)
+        iec = iec.evolve(trace={**iec.trace,
+                                "runtime": {"backend": "llama-server"}})
+        capability = runtime.registry.get("CAP-007")
+        from leanlm.contracts.iec import PipelineStage
+        result = capability.execute(iec, PipelineStage.METRICS_FINALIZATION)
+        assert any("this process only" in w for w in result.warnings)
+
+    def test_an_in_process_backend_is_not_flagged(self, runtime):
+        iec = runtime.ask(QUESTION)
+        iec = iec.evolve(trace={**iec.trace,
+                                "runtime": {"backend": "llama-cpp-python"}})
+        capability = runtime.registry.get("CAP-007")
+        from leanlm.contracts.iec import PipelineStage
+        result = capability.execute(iec, PipelineStage.METRICS_FINALIZATION)
+        assert not any("this process only" in w for w in result.warnings)

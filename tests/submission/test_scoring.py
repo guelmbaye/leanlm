@@ -248,3 +248,59 @@ class TestCandidateRanking:
         rendered = render_candidates(rank_candidates(self._candidates()))
         assert "*" in rendered
         assert "2 points" in rendered
+
+
+class TestSaturationBreaksTransferability:
+    """A ranking taken where nobody saturates does not hold where somebody does.
+
+    Stated wrongly earlier in this project: "relative rankings between candidates
+    survive a change of machine". They do when the scoring function is monotone.
+    `min(TPS / 15, 1)` is flat above the reference, so on slow hardware the
+    smaller model wins on throughput alone, and on the evaluation machine the
+    term can cancel entirely and hand the decision to accuracy -- which favours
+    the larger model.
+    """
+
+    def _rank(self, small_tps: float, large_tps: float):
+        from leanlm.benchmarks.scoring import Candidate, rank_candidates
+        return rank_candidates([
+            Candidate("small", 0.75, small_tps, 1.7),
+            Candidate("large", 0.83, large_tps, 3.0),
+        ])
+
+    def test_the_smaller_model_wins_on_slow_hardware(self):
+        assert self._rank(7.0, 3.5)[0]["name"] == "small"
+
+    def test_the_larger_model_wins_once_both_saturate(self):
+        """The throughput term is identical, so accuracy decides."""
+        assert self._rank(30.0, 20.0)[0]["name"] == "large"
+
+    def test_the_flip_is_detected_and_named(self):
+        from leanlm.benchmarks.scoring import ranking_is_hardware_dependent
+        analysis = ranking_is_hardware_dependent(self._rank(7.0, 3.5))
+        assert analysis["hardware_dependent"] is True
+        assert analysis["winner_here"] == "small"
+        assert analysis["winner_if_all_saturate"] == "large"
+
+    def test_no_warning_when_everything_already_saturates(self):
+        from leanlm.benchmarks.scoring import ranking_is_hardware_dependent
+        analysis = ranking_is_hardware_dependent(self._rank(30.0, 20.0))
+        assert analysis["hardware_dependent"] is False
+        assert analysis["unsaturated"] == []
+
+    def test_no_warning_when_the_winner_would_not_change(self):
+        """A large accuracy gap makes the ranking robust to hardware."""
+        from leanlm.benchmarks.scoring import Candidate, rank_candidates
+        from leanlm.benchmarks.scoring import ranking_is_hardware_dependent
+        rows = rank_candidates([
+            Candidate("good", 0.90, 7.0, 1.7),
+            Candidate("poor", 0.40, 3.5, 3.0),
+        ])
+        analysis = ranking_is_hardware_dependent(rows)
+        assert analysis["hardware_dependent"] is False
+
+    def test_the_rendering_tells_the_reader_to_measure_elsewhere(self):
+        from leanlm.benchmarks.scoring import render_candidates
+        rendered = render_candidates(self._rank(7.0, 3.5))
+        assert "HARDWARE-DEPENDENT" in rendered
+        assert "close to the profile" in rendered

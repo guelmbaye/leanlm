@@ -66,6 +66,18 @@ class PerformanceEngineeringCapability(Capability):
                     f"memory pressure: {used_ratio * 100:.0f}% of RAM in use"
                 )
                 self._warn(iec.session_id, "memory_pressure", round(used_ratio, 3))
+
+        # An out-of-process backend holds the model elsewhere, so this process's
+        # RSS excludes the thing that dominates it. Reporting 32 MB for a run
+        # backed by a 1.2 GB model is not a small discrepancy: efficiency is 20%
+        # of the ADTC score, and a figure that omits the model measures nothing
+        # about the model.
+        backend = (result.trace.get("runtime", {}) or {}).get("backend", "")
+        if backend in ("llama-server", "llama-cli"):
+            result = result.with_warning(
+                f"peak RSS covers this process only -- the model runs under "
+                f"{backend}, so its memory is not counted here. The official "
+                "profiler measures the model directly; use it for efficiency")
         return result
 
     def _warn(self, session_id: str, kind: str, value) -> None:
