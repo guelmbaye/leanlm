@@ -27,6 +27,7 @@ found() {
 }
 
 check() {
+  printf 'leanlm      : %s\n' "$(found leanlm)"
   printf 'llama-bench : %s\n' "$(found llama-bench)"
   printf 'python      : %s\n' "$(python3 --version 2>&1)"
   printf 'profiler    : %s\n' "$(found adtc-profiler)"
@@ -97,6 +98,31 @@ fi
 # fresh non-login shell.
 export PATH="${HOME}/.local/bin:${PREFIX}/bin:${PATH}"
 
+step "leanlm"
+# The point of this machine is to run LeanLM on it, so installing everything
+# around LeanLM and not LeanLM itself was a gap worth closing. Ubuntu 24.04
+# refuses a system-wide install (PEP 668), so it goes in a virtualenv beside the
+# repository -- which is also what lets `pytest` run here.
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VENV_DIR="${VENV_DIR:-${REPO_ROOT}/.venv}"
+
+if [[ -f "${REPO_ROOT}/pyproject.toml" ]]; then
+  if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
+    python3 -m venv "${VENV_DIR}"
+  fi
+  "${VENV_DIR}/bin/pip" install --quiet --upgrade pip
+  # `optional` is the pure-Python set: psutil, PyYAML, pypdf, pdfminer.six. It
+  # deliberately excludes llama-cpp-python, which compiles and which this
+  # machine does not need -- the llama.cpp binaries are already installed.
+  "${VENV_DIR}/bin/pip" install --quiet -e "${REPO_ROOT}[optional,dev]"
+  mkdir -p "${PREFIX}/bin"
+  ln -sf "${VENV_DIR}/bin/leanlm" "${PREFIX}/bin/leanlm"
+  echo "  installed into ${VENV_DIR}, linked from ${PREFIX}/bin/leanlm"
+  echo "  for pytest and python -m: source ${VENV_DIR}/bin/activate"
+else
+  echo "  no pyproject.toml at ${REPO_ROOT}; skipping"
+fi
+
 step "sensors"
 # Harmless on a VM, where no thermal device exists to detect.
 sudo sensors-detect --auto >/dev/null 2>&1 || true
@@ -104,9 +130,12 @@ sudo sensors-detect --auto >/dev/null 2>&1 || true
 step "ready"
 check
 
-if ! have adtc-profiler; then
+for tool in leanlm adtc-profiler; do
+  have "${tool}" || missing_tools="${missing_tools:-} ${tool}"
+done
+if [[ -n "${missing_tools:-}" ]]; then
   echo
-  echo "  adtc-profiler is installed but not on PATH in this shell." >&2
+  echo "  installed but not on PATH in this shell:${missing_tools}" >&2
   echo "  Run:  export PATH=\"\${HOME}/.local/bin:\$PATH\"" >&2
   echo "  and add that line to ~/.bashrc." >&2
   exit 1
@@ -114,7 +143,12 @@ fi
 
 cat <<'NEXT'
 
-Next, from your submission directory:
+Next:
+
+  leanlm doctor                  # this machine, checked against the profile
+  leanlm speed                   # raw model speed, and what it is worth in points
+
+Then, from your submission directory:
 
   bash download_model.sh
   adtc-profiler run --submission . --mode participant --output submission.json

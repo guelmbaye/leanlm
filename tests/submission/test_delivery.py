@@ -461,3 +461,33 @@ class TestUbuntuProvisioning:
     def test_the_check_reports_the_resolved_path(self):
         """A path answers "which one", which matters when two builds exist."""
         assert 'command -v "$1"' in self._script()
+
+    def test_it_installs_leanlm_itself(self):
+        """The point of the measurement machine is to run LeanLM on it.
+        Installing everything around LeanLM and not LeanLM was a gap that only
+        showed up as `leanlm: command not found` after the model had been
+        downloaded."""
+        script = self._script()
+        assert "install --quiet -e" in script
+        assert "[optional,dev]" in script
+
+    def test_leanlm_goes_in_a_virtualenv_too(self):
+        """PEP 668 applies to it exactly as it does to the profiler."""
+        script = self._script()
+        assert "VENV_DIR" in script
+        assert "python3 -m venv" in script
+
+    def test_the_check_reports_leanlm(self):
+        assert "'leanlm      : %s" in self._script()
+
+    def test_the_compiled_backend_is_not_pulled_in(self):
+        """The llama.cpp binaries are already installed; llama-cpp-python would
+        compile for minutes and change nothing.
+
+        Executable lines only: a comment explaining why a package is excluded
+        must not read as a use of it.
+        """
+        code = "\n".join(line for line in self._script().splitlines()
+                          if not line.lstrip().startswith("#"))
+        assert "llama-cpp-python" not in code
+        assert "[optional,dev]" in code
