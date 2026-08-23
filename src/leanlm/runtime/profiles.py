@@ -121,6 +121,54 @@ def load_profile(profile_id: str = "development",
     return profile
 
 
+# Bytes per weight, by quantization family. Rough, and only used to catch a
+# declaration that is wrong by a factor rather than by a rounding.
+_BYTES_PER_WEIGHT = {"Q2": 0.33, "Q3": 0.44, "Q4": 0.58, "Q5": 0.70,
+                     "Q6": 0.82, "Q8": 1.06, "F16": 2.0, "F32": 4.0}
+
+
+def estimate_parameters(path: str, quantization: str) -> float | None:
+    """Parameter count implied by the file, in billions.
+
+    `metadata.json` declares `parameters_estimate` and a judge can divide the
+    file size by the quantization to check it. A profile that said 3.8B for a
+    1.16 GB Q4_0 file was off by a factor of two -- an error that reads as
+    carelessness at best.
+    """
+    target = Path(path)
+    if not target.is_file():
+        return None
+    family = (quantization or "").upper()[:2]
+    bytes_per_weight = _BYTES_PER_WEIGHT.get(family)
+    if not bytes_per_weight:
+        return None
+    return round(target.stat().st_size / bytes_per_weight / 1e9, 2)
+
+
+def parameter_mismatch(profile: RuntimeProfile) -> str:
+    """Empty when the declaration is plausible; a message when it is not."""
+    declared = str(profile.model.get("parameters", "")).strip().upper()
+    if not declared:
+        return ""
+    try:
+        declared_b = float(declared.rstrip("B").strip())
+    except ValueError:
+        return ""
+    implied = estimate_parameters(str(profile.model.get("path", "")),
+                                  str(profile.model.get("quantization", "")))
+    if implied is None or implied <= 0:
+        return ""
+    # 0.6-1.6 rather than a factor of two: the real error was 3.8B declared for
+    # a file implying 2.09B, a ratio of 1.82 that a two-fold tolerance waved
+    # through. The band still absorbs the crudeness of the estimate itself --
+    # 1.88B declared against 2.09B implied is the same model.
+    if 0.6 <= declared_b / implied <= 1.6:
+        return ""
+    return (f"model.parameters says {declared} but the file implies about "
+            f"{implied}B at {profile.model.get('quantization')}. This value goes "
+            "into metadata.json, where it can be checked against the file")
+
+
 def validate_profile(profile: RuntimeProfile) -> None:
     """RC-08 safe defaults, RC-02 deterministic configuration."""
     if not profile.id:

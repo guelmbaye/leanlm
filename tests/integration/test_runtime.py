@@ -467,3 +467,57 @@ class TestAbandonedRequests:
         machine.transition(RuntimeState.OPTIMIZING)
         with pytest.raises(LeanLMError):
             machine.transition(RuntimeState.COMPLETED)
+
+
+class TestParameterDeclaration:
+    """`metadata.json` declares a parameter count a judge can check.
+
+    A profile said 3.8B for a 1.16 GB Q4_0 file, which implies about 2B. Off by
+    a factor of two in a field that is trivially verifiable against the file.
+    """
+
+    def _profile(self, tmp_path, declared: str, size_mb: int = 1158):
+        import dataclasses
+        import os
+
+        from leanlm.runtime.profiles import load_profile
+        model = tmp_path / "m.gguf"
+        # A sparse file: the check reads st_size, and writing 1.1 GB of zeroes to
+        # verify a division filled the disk and killed the run.
+        with open(model, "wb") as handle:
+            handle.write(b"GGUF")
+            handle.truncate(size_mb * 1024 * 1024)
+        assert os.path.getsize(model) == size_mb * 1024 * 1024
+        base = load_profile("competition")
+        return dataclasses.replace(base, model={
+            **base.model, "path": str(model), "quantization": "Q4_0",
+            "parameters": declared})
+
+    def test_a_plausible_declaration_passes(self, tmp_path):
+        from leanlm.runtime.profiles import parameter_mismatch
+        assert parameter_mismatch(self._profile(tmp_path, "1.9B")) == ""
+
+    def test_a_declaration_off_by_a_factor_is_caught(self, tmp_path):
+        from leanlm.runtime.profiles import parameter_mismatch
+        message = parameter_mismatch(self._profile(tmp_path, "3.8B"))
+        assert "3.8B" in message
+        assert "metadata.json" in message
+
+    def test_rounding_is_tolerated(self, tmp_path):
+        """2.09 implied against 1.88 declared is the same model."""
+        from leanlm.runtime.profiles import parameter_mismatch
+        assert parameter_mismatch(self._profile(tmp_path, "1.88B")) == ""
+
+    def test_an_absent_file_says_nothing(self, tmp_path):
+        import dataclasses
+
+        from leanlm.runtime.profiles import load_profile, parameter_mismatch
+        base = load_profile("competition")
+        profile = dataclasses.replace(base, model={
+            **base.model, "path": str(tmp_path / "absent.gguf"),
+            "parameters": "99B"})
+        assert parameter_mismatch(profile) == ""
+
+    def test_an_undeclared_count_says_nothing(self, tmp_path):
+        from leanlm.runtime.profiles import parameter_mismatch
+        assert parameter_mismatch(self._profile(tmp_path, "")) == ""

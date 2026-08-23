@@ -136,6 +136,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if model_path and Path(model_path).is_file():
         report = verify_model_binding(model_path, str(binding.get("sha256", "")))
         state = "verified" if report.trusted else "PRESENT BUT UNVERIFIED"
+        from ..runtime.profiles import parameter_mismatch
+        mismatch = parameter_mismatch(profile)
+        if mismatch:
+            lines.append(f"  declaration      : {mismatch}")
+            ok = False
         lines.append(f"  model            : {state} "
                      f"({report.details.get('size_mb', '?')} MB)")
         ok = ok and report.trusted
