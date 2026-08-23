@@ -640,3 +640,42 @@ Six shapes taken verbatim from those runs are now regression tests.
 **The rule.** A cleaner that removes more than it can justify is indistinguishable
 from a broken model, and it fails in the direction that looks like someone
 else's fault.
+
+---
+
+## EDB-036 — llama-server, and the measurement that finally described the model
+
+Same model, same machine, same corpus, same hour:
+
+| backend | answer | source | refusal | truncated | overall |
+|---|---|---|---|---|---|
+| `llama-cli` | 10% | 10% | 0% | 92% | **8%** |
+| `llama-server` | 90% | 100% | 100% | 0% | **92%** |
+
+Nothing about the model changed. `llama-cli` in recent builds is a chat
+application: it opens an interactive session, prints a banner, echoes the
+prompt, and applies the model's chat template -- which is what put Qwen3.5 into
+reasoning mode and spent every token budget on a draft. `llama-server` exposes a
+completion endpoint with none of that.
+
+Throughput tells the same story from the other side: `12.84 tok/s, cv 0.013`
+through the server against `1.95 tok/s, cv 0.66` through the CLI. The CLI figure
+was never a measurement of generation; it was a measurement of a chat session.
+
+**The remaining defect this run exposed.** Cleaning had been wired into the
+subprocess backend only. Through the server the model emits an empty
+`<think></think>` before answering, which was counted as part of the response --
+and "The flat recovery indemnity for a late payment is 40 EUR [S1]", entirely
+correct and correctly cited, was rated *insufficient* because of it. All three
+real backends now clean and flag truncation identically.
+
+**The one honest failure left.** Q10 asks how long a confidentiality obligation
+lasts. Retrieval put the right document in front of the model, which declined
+anyway: a false refusal, and a real limit of a 2B model rather than a defect in
+the layer. It belongs in the report's honest-limits section, not in a fix.
+
+**What made this hard to see.** Four consecutive measurements described the
+tooling rather than the model: a simulator, a scratchpad scored as an answer,
+text the cleaner had mangled, and a chat session timed as generation. Each
+produced a plausible number. The only reason any of them was caught is that the
+answers were printed alongside the score.

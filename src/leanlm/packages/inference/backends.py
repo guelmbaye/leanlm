@@ -158,10 +158,15 @@ class LlamaCppPythonBackend(InferenceBackend):
             if finish:
                 stop_reason = finish
         total = watch.stop()
+        raw = "".join(chunks).strip()
+        text, notes = clean_generation(raw, prompt)
+        if notes:
+            self.last_cleaning_notes = tuple(notes)
         return GenerationResult(
-            text="".join(chunks).strip(), backend=self.name, generated_tokens=generated,
+            text=text or raw, backend=self.name, generated_tokens=generated,
             prompt_tokens=len(self._llama.tokenize(prompt.encode("utf-8"))),  # type: ignore
             first_token_latency_ms=first_token_ms, inference_ms=total,
+            truncated=(stop_reason == "length" or looks_truncated(text or raw)),
             stop_reason=stop_reason,
         )
 
@@ -241,12 +246,22 @@ class LlamaCppServerBackend(InferenceBackend):
             body.get("content", ""))
         if on_first_token:
             on_first_token(first_ms)
+        # Cleaning was wired into the subprocess backend only, so a model that
+        # emits an empty "<think></think>" through the server had it counted as
+        # part of the answer -- which cost a correct, cited response its
+        # confidence rating.
+        raw = (body.get("content") or "").strip()
+        text, notes = clean_generation(raw, prompt)
+        if notes:
+            self.last_cleaning_notes = tuple(notes)
+        stop_reason = body.get("stop_type", "eos")
         return GenerationResult(
-            text=(body.get("content") or "").strip(), backend=self.name,
+            text=text or raw, backend=self.name,
             generated_tokens=generated,
             prompt_tokens=int(timings.get("prompt_n", 0)) or DEFAULT_TOKEN_COUNTER.count(prompt),
             first_token_latency_ms=round(first_ms, 3), inference_ms=total,
-            stop_reason=body.get("stop_type", "eos"), extra={"timings": timings},
+            truncated=(stop_reason == "limit" or looks_truncated(text or raw)),
+            stop_reason=stop_reason, extra={"timings": timings},
         )
 
 

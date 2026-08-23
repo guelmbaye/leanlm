@@ -518,3 +518,40 @@ class TestFlagProbing:
         first = backend._help
         backend.supported_flags()
         assert backend._help is first
+
+
+class TestEveryBackendCleans:
+    """Cleaning must not depend on which backend produced the text.
+
+    It was wired into the subprocess backend only. A model that emits an empty
+    `<think></think>` through llama-server had it counted as part of the answer,
+    and a correct, cited response -- "The flat recovery indemnity for a late
+    payment is 40 EUR [S1]" -- was rated insufficient because of it.
+    """
+
+    def _source(self) -> str:
+        from pathlib import Path
+        return (Path(__file__).resolve().parents[2]
+                / "src/leanlm/packages/inference/backends.py").read_text(
+                    encoding="utf-8")
+
+    def test_all_three_real_backends_clean_their_output(self):
+        source = self._source()
+        assert source.count("clean_generation(") >= 3
+
+    def test_all_three_set_the_truncation_flag(self):
+        source = self._source()
+        assert source.count("truncated=") >= 3
+
+    def test_an_empty_think_block_is_removed(self):
+        from leanlm.packages.inference.cleaning import clean_generation
+        text, _ = clean_generation(
+            "<think>\n\n</think>\n\nThe indemnity is 40 EUR [S1].", "")
+        assert text == "The indemnity is 40 EUR [S1]."
+
+    def test_cleaning_never_returns_less_than_nothing(self):
+        """If stripping would empty the text, the raw output is kept and the
+        caller decides. A backend must not turn a real answer into silence."""
+        from leanlm.packages.inference.cleaning import clean_generation
+        text, _ = clean_generation("<think>only a thought</think>", "")
+        assert text == ""   # reported as empty, not as a fabricated answer
