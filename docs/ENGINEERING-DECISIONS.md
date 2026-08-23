@@ -597,3 +597,46 @@ reasoning that precedes it.
 -p 512 -n 128`, which never reads our configuration. A larger budget costs
 wall-clock on our own accuracy runs and nothing at all on the score. That was
 worth checking before trading accuracy for speed that was never at stake.
+
+---
+
+## EDB-035 — The cleaner was corrupting the answers it was meant to rescue
+
+Accuracy fell to 8% and the failures said "cut off by the token budget" for
+eleven of twelve probes. The token budget was not the whole story: several
+answers *began mid-word*.
+
+```
+"is direct.\n\n Draft:"
+"s the question.\n\n4. **Formulate the Output:**"
+", reply exactly: \"The supplied documents do not allow a conclusion.\""
+```
+
+Those cut points are not the model's. They are mine. The echo remover searched
+the whole output for any line of the prompt and cut everything before it. A
+reasoning model quotes its own instructions while working -- *"Answer in the
+language of the question. Be concise and factual."* appears mid-thought -- so
+the search hit inside the reasoning and removed the first half of the response,
+including, in several cases, the answer.
+
+**The distinguishing property.** An echo reproduces the prompt at the head,
+contiguously. A quotation appears anywhere. So the remover now confirms the
+output *opens* with the prompt before cutting anything, and cuts only as far as
+the prompt's last line.
+
+Two smaller faults surfaced while fixing it, both from the same instinct to
+delete rather than trim:
+
+- the chat UI's slash-command list survived the banner pass and stood between
+  the output and the echoed prompt, so the echo was no longer a prefix;
+- dropping lines that begin with the UI's `> ` input marker deleted answers,
+  because an answer can follow that marker on the same line. The marker is now
+  stripped from the line; the line is kept.
+
+**What this cost.** One measurement run reported 83% on a scratchpad; the next
+reported 8% on text the cleaner had mangled. Neither number described the model.
+Six shapes taken verbatim from those runs are now regression tests.
+
+**The rule.** A cleaner that removes more than it can justify is indistinguishable
+from a broken model, and it fails in the direction that looks like someone
+else's fault.

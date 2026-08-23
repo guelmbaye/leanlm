@@ -76,16 +76,49 @@ def strip_tool_scaffolding(text: str, prompt: str = "") -> tuple[str, bool]:
             text = text[cut + 1:] if cut != -1 else ""
             lowered = text.lower()
 
-    # The prompt echoed back: cut at its last distinctive line rather than
-    # matching the whole thing, which the UI may have truncated or reflowed.
+    # The prompt echoed back. Only an echo at the *start* counts: a reasoning
+    # model quotes its own instructions while working -- "Answer in the language
+    # of the question. Be concise and factual." appears mid-thought -- and
+    # searching the whole output for that line cut the answer in half, leaving
+    # fragments like "in the language of the question (English)." that then
+    # looked truncated and scored zero.
+    #
+    # A chat UI lists its slash commands after the banner. Cutting at the banner
+    # marker leaves them behind, and they then stood between the output and the
+    # echoed prompt, so the echo was no longer recognisable as a prefix.
+    lines = text.splitlines()
+    original_count = len(lines)
+    while lines and (not lines[0].strip() or lines[0].lstrip().startswith("/")):
+        lines.pop(0)
+    # The input marker is removed from the line, never the line from the output:
+    # the UI writes "> " before the prompt *and* the answer can follow it, so
+    # dropping the line deleted the answer.
+    if lines and lines[0].lstrip().startswith(">"):
+        lines[0] = lines[0].lstrip().lstrip(">").lstrip()
+    if lines != text.splitlines()[original_count - len(lines):] or \
+            len(lines) != original_count:
+        found = True
+    text = "\n".join(lines)
+
+    # An echo reproduces the prompt at the head, contiguously. A reasoning model
+    # quotes fragments of it anywhere. So: confirm the output opens with the
+    # prompt, and only then cut past the prompt's final line.
     if prompt:
-        for line in reversed([ln.strip() for ln in prompt.splitlines() if len(ln.strip()) > 24]):
-            index = text.rfind(line[:60])
+        opening = prompt.strip()[:48]
+        # A chat UI prefixes the echoed prompt with its input marker.
+        head = text.lstrip().lstrip(">").lstrip()
+        if opening and head.startswith(opening):
+            text = head
+            found = True
+            last_line = next(
+                (ln.strip() for ln in reversed(prompt.splitlines())
+                 if len(ln.strip()) > 8), "")
+            index = text.rfind(last_line[:60]) if last_line else -1
             if index != -1:
-                found = True
                 cut = text.find("\n", index)
                 text = text[cut + 1:] if cut != -1 else ""
-                break
+            else:
+                text = text[len(prompt):]
 
     cleaned = _TRAILING_NOISE.sub("", text).strip()
     if cleaned != text.strip():

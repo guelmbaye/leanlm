@@ -164,3 +164,53 @@ class TestFinalAnswerExtraction:
         _, notes = clean_generation(
             "1. think\n\n**Answer:** The ceiling is 25 EUR. [S1]", "")
         assert any("max_output_tokens" in note for note in notes)
+
+
+class TestEchoStrippingIsNotOverEager:
+    """Every case here comes from a real run, including the ones I broke.
+
+    The first echo remover searched the whole output for any prompt line. A
+    reasoning model quotes its own instructions while working, so the search hit
+    mid-thought and cut the answer in half -- producing fragments like
+    "in the language of the question (English)." that then looked truncated and
+    scored zero. Ten of twelve probes were corrupted this way by the cleaner,
+    not by the model.
+    """
+
+    PROMPT = ("You are LeanLM, an offline assistant answering strictly from the "
+              "supplied excerpts.\nRules:\n5. Answer in the language of the "
+              "question. Be concise and factual.\n\n### Question\nWhat is the "
+              "ceiling for a lunch?")
+    ANSWER = "The ceiling for lunch is 25 EUR. [S1]"
+
+    def _clean(self, raw: str) -> str:
+        return clean_generation(raw, self.PROMPT)[0].strip()
+
+    def test_a_quoted_instruction_mid_reasoning_is_not_a_cut_point(self):
+        raw = ("1. **Analyse:** answer in the language of the question. Be "
+               f"concise and factual.\n2. **Draft Answer:** {self.ANSWER}")
+        assert self._clean(raw) == self.ANSWER
+
+    def test_a_genuine_prefix_echo_is_removed(self):
+        assert self._clean(f"{self.PROMPT}\n{self.ANSWER}") == self.ANSWER
+
+    def test_a_bare_answer_is_untouched(self):
+        assert self._clean(self.ANSWER) == self.ANSWER
+
+    def test_banner_commands_and_echo_together(self):
+        raw = ("Loading model...\n\navailable commands:\n"
+               "  /exit or Ctrl+C     stop\n  /regen              redo\n\n"
+               f"> {self.PROMPT}\n{self.ANSWER}")
+        assert self._clean(raw) == self.ANSWER
+
+    def test_the_input_marker_is_stripped_not_the_line(self):
+        """The UI writes "> " before the prompt, and an answer can follow it on
+        the same line. Dropping the line deleted the answer."""
+        assert self._clean(f"  /exit\n> {self.ANSWER}") == self.ANSWER
+
+    def test_a_truncated_draft_stays_truncated(self):
+        """Cleaning must not rescue what the model never finished."""
+        raw = "3. **Locate:** 25 EUR\n4. **Draft Answer:** The ceiling for lunch is 25"
+        cleaned, notes = clean_generation(raw, self.PROMPT)
+        assert cleaned == "The ceiling for lunch is 25"
+        assert any("mid-sentence" in note for note in notes)
