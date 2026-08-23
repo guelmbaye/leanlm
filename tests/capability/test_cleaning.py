@@ -106,3 +106,61 @@ class TestCombined:
         text, notes = clean_generation(ANSWER, PROMPT)
         assert text == ANSWER
         assert notes == ()
+
+
+class TestTruncationFromText:
+    """Where the text ends is observable; the token count is not always.
+
+    The first truncation signal was `generated_tokens >= max_output_tokens`,
+    parsed out of llama.cpp's stderr with an estimate as fallback. On a real run
+    it reported `truncated: 0.0` for twelve generations that all stopped
+    mid-word.
+    """
+
+    def test_a_sentence_that_stops_mid_word_is_truncated(self):
+        from leanlm.packages.inference.cleaning import looks_truncated
+        assert looks_truncated("5. **Review Constrain")
+        assert looks_truncated("* State the value: 20 EUR per month.\n * En")
+
+    def test_a_completed_sentence_is_not(self):
+        from leanlm.packages.inference.cleaning import looks_truncated
+        assert not looks_truncated("The ceiling for lunch is 25 EUR. [S1]")
+        assert not looks_truncated("Is that clear?")
+        assert not looks_truncated('He said "yes."')
+
+    def test_empty_output_is_not_called_truncated(self):
+        """It is a different failure with a different cause."""
+        from leanlm.packages.inference.cleaning import looks_truncated
+        assert not looks_truncated("   ")
+
+
+class TestFinalAnswerExtraction:
+    """Bare numbered reasoning carries no marker to strip, but often states the
+    answer somewhere inside itself."""
+
+    def test_the_answer_after_a_draft_marker_is_taken(self):
+        from leanlm.packages.inference.cleaning import extract_final_answer
+        text = ("2. **Scan:** keywords\n\n**Draft Answer:** The notice period is "
+                "three (3) months. [S1]")
+        answer, found = extract_final_answer(text)
+        assert found
+        assert answer.startswith("The notice period is three (3) months")
+
+    def test_text_without_a_marker_is_returned_whole(self):
+        """Guessing where reasoning ends is how the cleaner truncates a correct
+        answer that the model had finished."""
+        from leanlm.packages.inference.cleaning import extract_final_answer
+        answer, found = extract_final_answer("The ceiling is 25 EUR. [S1]")
+        assert not found
+        assert answer == "The ceiling is 25 EUR. [S1]"
+
+    def test_a_marker_with_nothing_after_it_is_not_an_answer(self):
+        from leanlm.packages.inference.cleaning import extract_final_answer
+        answer, found = extract_final_answer("3. Reasoning\n\n**Draft Answer:**")
+        assert not found
+
+    def test_the_extraction_is_reported(self):
+        from leanlm.packages.inference.cleaning import clean_generation
+        _, notes = clean_generation(
+            "1. think\n\n**Answer:** The ceiling is 25 EUR. [S1]", "")
+        assert any("max_output_tokens" in note for note in notes)

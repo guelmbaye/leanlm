@@ -33,7 +33,7 @@ from ...shared.clock import Stopwatch
 from ...shared.errors import inference_error, resource_error
 from ...shared.hashing import sha256_file
 from ...shared.text import DEFAULT_TOKEN_COUNTER, LlamaTokenCounter, TokenCounter
-from .cleaning import clean_generation
+from .cleaning import clean_generation, looks_truncated
 from .models import GenerationResult, ModelBinding
 from .policies import GenerationPolicy
 
@@ -560,7 +560,11 @@ class LlamaCppBinaryBackend(InferenceBackend):
         if cleaning_notes:
             self.last_cleaning_notes = tuple(cleaning_notes)
         return GenerationResult(
-            truncated=generated >= self.policy.max_output_tokens,
+            # Two signals, either sufficient: the budget was reached, or the
+            # text stops mid-sentence. The first depends on a token count parsed
+            # from stderr and is not always available; the second always is.
+            truncated=(generated >= self.policy.max_output_tokens
+                       or looks_truncated(text)),
             text=text, backend=self.name, generated_tokens=generated,
             prompt_tokens=DEFAULT_TOKEN_COUNTER.count(prompt),
             first_token_latency_ms=round(first_ms, 3), inference_ms=total,

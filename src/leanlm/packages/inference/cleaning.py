@@ -93,6 +93,46 @@ def strip_tool_scaffolding(text: str, prompt: str = "") -> tuple[str, bool]:
     return (cleaned or original.strip()), found
 
 
+# A completed sentence ends somewhere. These are the endings that count.
+_TERMINAL = tuple('.!?"\')]}»') + ("\u2019",)
+
+# Markers a reasoning model puts before the thing it actually wants to say.
+_FINAL_ANSWER = re.compile(
+    r"(?:\*\*)?(?:draft\s+answer|final\s+answer|answer)\s*:?(?:\*\*)?\s*:?\s*",
+    re.IGNORECASE)
+
+
+def looks_truncated(text: str) -> bool:
+    """Did the generation stop mid-thought?
+
+    Token accounting was the first signal tried and it is not dependable: the
+    count is parsed out of llama.cpp's stderr and falls back to an estimate when
+    the format differs, so a generation cut off at the budget was reported as
+    complete. Where the text ends is observable regardless.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return False
+    return not stripped.endswith(_TERMINAL)
+
+
+def extract_final_answer(text: str) -> tuple[str, bool]:
+    """Pull the answer out of a reasoning block that reached one.
+
+    Returns the text unchanged when no marker is found, because guessing where
+    reasoning ends is how a correct answer gets truncated by the cleaner instead
+    of by the model.
+    """
+    matches = list(_FINAL_ANSWER.finditer(text))
+    if not matches:
+        return text, False
+    tail = text[matches[-1].end():].strip()
+    # A marker at the very end means the model announced an answer and stopped.
+    if len(tail) < 8:
+        return text, False
+    return tail, True
+
+
 def clean_generation(text: str, prompt: str = "") -> tuple[str, tuple[str, ...]]:
     """Both passes, with a note of what was removed.
 
@@ -120,5 +160,20 @@ def clean_generation(text: str, prompt: str = "") -> tuple[str, tuple[str, ...]]
                 "the model produced only a reasoning block; the token budget ran "
                 "out before it answered"])
         text = stripped
+
+    # Bare numbered reasoning: no marker to strip, but often a stated answer
+    # somewhere inside it.
+    extracted, found_answer = extract_final_answer(text)
+    if found_answer:
+        notes.append(
+            "the model reasoned before answering and the answer was extracted "
+            "from the end of that reasoning. Raise inference.max_output_tokens "
+            "so it has room to finish, or disable thinking")
+        text = extracted
+
+    if looks_truncated(text):
+        notes.append(
+            "the generation ends mid-sentence: it was cut off before finishing. "
+            "Nothing in it should be read as a completed answer")
 
     return text.strip(), tuple(notes)

@@ -568,3 +568,32 @@ day.
 for a substring will find it wherever it appears, including in text the model
 never meant as an answer. The check is now: was the generation complete, then
 does it contain the fact. Order matters.
+
+---
+
+## EDB-034 — Two truncation signals, and only one that works
+
+The fix in EDB-033 flagged a generation as truncated when
+`generated_tokens >= max_output_tokens`. The next run reported
+**`truncated: 0.0`** for twelve generations that every one of them ended
+mid-word: `5. **Review Constrain`, `* En`, `* Calc`.
+
+The count is parsed out of llama.cpp's stderr timing block and falls back to a
+heuristic estimate when the format does not match. A signal that depends on
+another program's log format is a signal that can quietly stop working.
+
+**Where the text ends is observable.** A completed sentence ends with terminal
+punctuation. `looks_truncated` checks that, and either signal now marks a
+generation truncated.
+
+**And the cause, which `/no_think` did not address.** The suffix was added to
+the prompt and the model reasoned anyway: Qwen honours it through the chat
+template, and LeanLM sends a raw completion prompt with no template at all. So
+the budget was raised to 768 tokens in all four profiles, giving the model room
+to think *and* answer, with `extract_final_answer` pulling the answer out of the
+reasoning that precedes it.
+
+**Why raising it is free.** The throughput component comes from `llama-bench
+-p 512 -n 128`, which never reads our configuration. A larger budget costs
+wall-clock on our own accuracy runs and nothing at all on the score. That was
+worth checking before trading accuracy for speed that was never at stake.
