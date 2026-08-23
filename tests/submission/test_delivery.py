@@ -449,3 +449,15 @@ class TestUbuntuProvisioning:
         script = self._script()
         assert "not on PATH in this shell" in script
         assert "exit 1" in script
+
+    def test_presence_is_checked_by_lookup_not_by_a_probe_flag(self):
+        """`adtc-profiler` has no --version. Calling one to test for presence
+        reported a working installation as MISSING, and sent the reader to
+        reinstall a tool that was already there."""
+        script = self._script()
+        assert "--version 2>/dev/null || echo MISSING" not in script
+        assert "command -v" in script
+
+    def test_the_check_reports_the_resolved_path(self):
+        """A path answers "which one", which matters when two builds exist."""
+        assert 'command -v "$1"' in self._script()

@@ -19,10 +19,17 @@ PREFIX="${PREFIX:-$HOME/.local}"
 step() { printf '\n=== %s ===\n' "$1"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Presence is `command -v`, never a probe flag. Reporting the profiler MISSING
+# because it does not implement `--version` sent a reader to reinstall a tool
+# that was already working.
+found() {
+  if have "$1"; then command -v "$1"; else echo MISSING; fi
+}
+
 check() {
-  printf 'llama-bench : %s\n' "$(have llama-bench && command -v llama-bench || echo MISSING)"
+  printf 'llama-bench : %s\n' "$(found llama-bench)"
   printf 'python      : %s\n' "$(python3 --version 2>&1)"
-  printf 'profiler    : %s\n' "$(have adtc-profiler && adtc-profiler --version 2>/dev/null || echo MISSING)"
+  printf 'profiler    : %s\n' "$(found adtc-profiler)"
   printf 'sensors     : %s\n' "$(have sensors && echo present || echo 'MISSING (cloud VMs expose no CPU temperature; the audit VM has the same limitation, so thermal is unmeasured on both sides and no penalty applies)')"
   printf 'cpus        : %s\n' "$(nproc)"
   printf 'memory      : %s\n' "$(free -g | awk '/^Mem:/ {print $2" GB"}')"
