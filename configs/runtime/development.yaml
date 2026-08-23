@@ -29,7 +29,7 @@ inference:
   top_k: 40
   top_p: 0.95
   repeat_penalty: 1.1
-  max_output_tokens: 128
+  max_output_tokens: 384
   seed: 20260601
   timeout_s: 300
 
