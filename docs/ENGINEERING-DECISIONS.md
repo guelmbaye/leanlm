@@ -523,3 +523,48 @@ and that the choice must be made on hardware close to the profile.
 function is monotone in the thing the machine changes. A cap, a floor or a step
 anywhere in the rubric breaks that, and the break is invisible in the numbers
 themselves -- both models simply look slow.
+
+---
+
+## EDB-033 — Scoring a scratchpad, and reporting 83%
+
+The first real accuracy run on conforming hardware reported **83% overall, 100%
+source accuracy, 0% hallucination**. Every one of those numbers was wrong,
+because the model had not answered a single question.
+
+Qwen3.5 reasons before answering. With a 128-token budget it produced twelve
+unfinished drafts:
+
+```
+3. **Locate Information:**
+ * Row 1 under "Category": "Lunch".
+ * Column "Ceiling" corresponding to "Lunch": "25 EUR".
+4. **Draft Answer:**
+ * Based on Excerpt [S1], the ceiling for lunch is 25 EUR.
+5. **Review Constrain
+```
+
+Cut off mid-word. The scorer looked for `25` in the text, found it inside the
+draft, and marked the probe correct. Eight of ten answerable probes were scored
+on a scratchpad.
+
+**Why the existing guard missed it.** `cleaning.py` strips reasoning marked with
+`<think>` or `[Start thinking]`. This model emits bare numbered steps with bold
+headers -- no marker to match. Pattern-matching prose was never going to be
+reliable here.
+
+**The signal that is reliable.** `generated_tokens >= max_output_tokens` means
+the generation was cut off by the budget, whatever it looks like. A truncated
+response is now flagged at the backend and can never be scored correct, in
+either direction: a truncated refusal is not a successful refusal either.
+
+**The second fix, which addresses the cause.** `prompt.thinking_suffix` appends
+an instruction to answer directly (`/no_think` for this family), configured in
+all four shipped profiles now that the model is chosen. Leaving it to be
+discovered costs an entire measurement run, which on this timeline is most of a
+day.
+
+**What this says about the accuracy number generally.** A scorer that searches
+for a substring will find it wherever it appears, including in text the model
+never meant as an answer. The check is now: was the generation complete, then
+does it contain the fact. Order matters.

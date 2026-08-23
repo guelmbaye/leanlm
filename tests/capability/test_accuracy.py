@@ -224,3 +224,90 @@ class TestEmptyAnswers:
                   unanswerable=True)])
         assert summary["hallucination_rate"] == 0.0
         assert "empty answer" in summary["failures"][0]["failure"]
+
+
+class TestTruncatedGenerations:
+    """A cut-off generation has not answered, whatever it contains.
+
+    Observed on the measurement machine with a hybrid reasoning model: every
+    response was an unfinished draft -- "3. Locate Information: ... 4. Draft
+    Answer: the ceiling for lunch is 25 EUR" -- cut off at the token budget. The
+    scorer credited eight probes because the figure appeared in the scratchpad,
+    and reported 83% for a model that had produced no answers at all.
+    """
+
+    def _cut_off(self, monkeypatch, runtime, text: str):
+        from leanlm.packages.inference.models import GenerationResult
+
+        def _generate(self, prompt, **kwargs):
+            return GenerationResult(
+                text=text, backend="stub", generated_tokens=128, prompt_tokens=100,
+                first_token_latency_ms=1.0, inference_ms=10.0, is_simulated=True,
+                truncated=True)
+
+        monkeypatch.setattr(type(runtime.backend), "generate", _generate)
+
+    def test_a_figure_inside_a_draft_is_not_an_answer(self, runtime, monkeypatch):
+        self._cut_off(monkeypatch, runtime,
+                      "4. **Draft Answer:** the ceiling for lunch is 25 EUR\n5. **Rev")
+        summary = AccuracyEvaluator(runtime).evaluate([
+            Probe(id="Z", question="What is the ceiling for a lunch?",
+                  must_contain=("25",))])
+        assert summary["accuracy"] == 0.0
+        assert "cut off" in summary["failures"][0]["failure"]
+
+    def test_the_rate_of_truncation_is_reported(self, runtime, monkeypatch):
+        self._cut_off(monkeypatch, runtime, "2. **Scan Excerpts:** 25 EUR appears")
+        summary = AccuracyEvaluator(runtime).evaluate([
+            Probe(id="Z", question="What is the ceiling for a lunch?",
+                  must_contain=("25",))])
+        assert summary["truncated"] == 1.0
+        assert "cut off by the token budget" in render_accuracy(summary)
+
+    def test_a_truncated_refusal_probe_is_not_a_success_either(self, runtime,
+                                                               monkeypatch):
+        self._cut_off(monkeypatch, runtime,
+                      "3. The excerpts do not contain the answer, so I should")
+        summary = AccuracyEvaluator(runtime).evaluate([
+            Probe(id="Z", question="What is the share price of Tesla?",
+                  unanswerable=True)])
+        assert summary["refusal_accuracy"] == 0.0
+
+    def test_a_complete_answer_is_unaffected(self, runtime, monkeypatch):
+        from leanlm.packages.inference.models import GenerationResult
+
+        def _generate(self, prompt, **kwargs):
+            return GenerationResult(
+                text="The ceiling for lunch is 25 EUR. [S1]", backend="stub",
+                generated_tokens=12, prompt_tokens=100, first_token_latency_ms=1.0,
+                inference_ms=10.0, is_simulated=True, truncated=False)
+
+        monkeypatch.setattr(type(runtime.backend), "generate", _generate)
+        summary = AccuracyEvaluator(runtime).evaluate([
+            Probe(id="Z", question="What is the ceiling for a lunch?",
+                  must_contain=("25",))])
+        assert summary["accuracy"] == 1.0
+
+
+class TestThinkingSuffix:
+    """Telling a hybrid reasoning model to answer directly."""
+
+    def test_the_suffix_reaches_the_prompt(self):
+        from leanlm.packages.inference import PromptBuilder
+        from leanlm.packages.inference.policies import PromptPolicy
+        prompt = PromptBuilder(PromptPolicy(thinking_suffix="/no_think")).build(
+            "What is the ceiling?", ())
+        assert "What is the ceiling? /no_think" in prompt.rendered
+
+    def test_it_is_absent_when_not_configured(self):
+        from leanlm.packages.inference import PromptBuilder
+        from leanlm.packages.inference.policies import PromptPolicy
+        prompt = PromptBuilder(PromptPolicy()).build("What is the ceiling?", ())
+        assert "/no_think" not in prompt.rendered
+
+    def test_the_shipped_profiles_configure_it(self):
+        """The model was chosen; leaving this to be discovered costs a whole
+        measurement run."""
+        from leanlm.runtime.profiles import load_profile
+        for name in ("development", "benchmark", "competition"):
+            assert load_profile(name).prompt.get("thinking_suffix") == "/no_think"

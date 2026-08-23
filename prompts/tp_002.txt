@@ -1,0 +1,18 @@
+Summarise the following contract clauses for a project manager who has five
+minutes. Produce exactly three bullet points: one on duration, one on payment,
+one on how to end the contract. Include every date and amount. Do not add
+anything the clauses do not say.
+
+ARTICLE 3 - TERM
+This contract is entered into for a term of twelve (12) months from the date of
+signature. It renews by tacit agreement for successive periods of six (6)
+months.
+
+ARTICLE 5 - PAYMENT TERMS
+Invoices are payable within 45 days end of month. Late payment incurs a penalty
+at three times the statutory interest rate, plus a flat recovery indemnity of
+40 EUR.
+
+ARTICLE 11 - TERMINATION
+Either party may terminate by giving three (3) months' written notice sent by
+registered letter.

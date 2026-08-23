@@ -155,6 +155,8 @@ class AccuracyEvaluator:
             "refusal_accuracy": refusal_accuracy,
             "overall_accuracy": overall,
             "hallucination_rate": _ratio(len(hallucinated), len(results)),
+            "truncated": _ratio(
+                len([r for r in results if "cut off" in r.failure]), len(results)),
             "failures": [r.to_dict() for r in results if not _passed(r, probes)],
             "results": [r.to_dict() for r in results],
             "runtime_metrics": {
@@ -178,6 +180,22 @@ class AccuracyEvaluator:
         answered = bool(answer.strip()) and not declined
         sources = tuple(e.document_name for e in iec.evidence)
         metrics = iec.metrics.to_flat() if iec.metrics else {}
+
+        truncated = bool(iec.response and iec.response.truncated)
+        if truncated:
+            # Observed: a model that reasons before answering spent its whole
+            # budget on the reasoning. The figures appeared inside the draft --
+            # "the ceiling for lunch is 25 EUR" -- and eight probes were scored
+            # correct on a scratchpad. A cut-off generation has not answered.
+            return ProbeResult(
+                probe.id, probe.question, answered=False, correct=False,
+                source_correct=None, declined=False, hallucinated=False,
+                answer=answer[:400], cited_sources=sources,
+                confidence=iec.validation.confidence.value if iec.validation else "",
+                failure=("the generation was cut off by the token budget; any "
+                         "figure in it is part of an unfinished draft, not an "
+                         "answer"),
+                metrics=metrics)
 
         if not answer.strip():
             # Distinct from both a wrong answer and a refusal: the backend
@@ -276,6 +294,16 @@ def render_accuracy(summary: dict[str, Any]) -> str:
         "",
         f"  OVERALL           : {summary['overall_accuracy']:.0%}",
     ]
+    if summary.get("truncated"):
+        lines.extend([
+            "",
+            f"  !! {summary['truncated']:.0%} of generations were cut off by the "
+            "token budget.",
+            "     A model that reasons before answering spends the budget on the "
+            "reasoning.",
+            "     Raise inference.max_output_tokens, or disable thinking with "
+            "prompt.thinking_suffix.",
+        ])
     if summary.get("failures"):
         lines.extend(["", "failures:"])
         for failure in summary["failures"]:

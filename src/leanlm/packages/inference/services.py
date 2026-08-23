@@ -72,7 +72,12 @@ class PromptBuilder:
         insufficient = INSUFFICIENT_ANSWER_FR if _looks_french(question) else INSUFFICIENT_ANSWER
         system = SYSTEM_TEMPLATE.format(insufficient=insufficient)
         evidence_block = self.render_evidence(evidence)
-        user = USER_TEMPLATE.format(evidence=evidence_block, question=question.strip())
+        # A hybrid reasoning model answers directly when told to. Without the
+        # suffix it may spend the whole token budget thinking and emit no answer.
+        asked = question.strip()
+        if self.policy.thinking_suffix:
+            asked = f"{asked} {self.policy.thinking_suffix.strip()}"
+        user = USER_TEMPLATE.format(evidence=evidence_block, question=asked)
         rendered = f"{system}\n{user}"
         context_tokens = self.counter.count(evidence_block)
         package = PromptPackage(

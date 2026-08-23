@@ -6,6 +6,12 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class PromptPolicy:
+    # Appended to the question. Qwen and several other hybrid reasoning models
+    # accept "/no_think" as an instruction to answer directly. Empty by default
+    # because it is model-specific; set it in the profile once the model is
+    # chosen. Without it, a reasoning model can spend an entire token budget
+    # thinking and never answer at all.
+    thinking_suffix: str = ""
     template_id: str = "leanlm.enterprise.grounded"
     template_version: str = "1.2.0"
     cite_evidence: bool = True

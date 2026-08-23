@@ -226,3 +226,61 @@ class TestReport:
             _request(tmp_path, benchmark_summary={"is_simulated": True}))
         report = (Path(result.output_dir) / "REPORT.md").read_text(encoding="utf-8")
         assert "simulated backend" in report.lower()
+
+
+class TestShippedPrompts:
+    """The two prompts we submit, checked for the properties that matter.
+
+    They are judged on the *model's* responses, and the profiler runs the model
+    directly -- LeanLM's retrieval is not in the path. A prompt that assumes
+    retrieved excerpts hands a bare model a question with no document in front
+    of it, and it will invent an answer.
+    """
+
+    def _prompts(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2] / "prompts"
+        return {p.name: p.read_text(encoding="utf-8") for p in sorted(root.glob("tp_*.txt"))}
+
+    def test_exactly_two_are_shipped(self):
+        assert len(self._prompts()) == 2
+
+    def test_each_carries_its_own_context(self):
+        """No prompt may depend on a document the judge does not have."""
+        for name, text in self._prompts().items():
+            assert len(text) > 400, f"{name} is too short to carry a document"
+            assert any(marker in text for marker in
+                       ("POLICY EXTRACT", "ARTICLE")), name
+
+    def test_none_refers_to_excerpts_it_does_not_supply(self):
+        for name, text in self._prompts().items():
+            lowered = text.lower()
+            assert "the excerpts below" not in lowered, name
+            assert "[s1]" not in lowered, name
+
+    def test_one_asks_for_something_the_context_does_not_cover(self):
+        """Calibration is the behaviour that matters most for document work,
+        and it is visible in a single response."""
+        joined = " ".join(self._prompts().values()).lower()
+        assert "parking" in joined
+        assert "say so" in joined or "does not state" in joined
+
+    def test_they_contain_neighbouring_figures(self):
+        """Picking the wrong one of a neighbouring pair is the realistic
+        failure: 15 days versus 30, 25 EUR versus 35."""
+        first = self._prompts()["tp_001.txt"]
+        for figure in ("15", "30", "25", "35"):
+            assert figure in first
+
+    def test_the_argument_builder_round_trips_them(self):
+        import json
+        import subprocess
+        import sys
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        result = subprocess.run(
+            [sys.executable, str(root / "scripts/build_metadata_prompts.py"),
+             "--json"], capture_output=True, text=True, cwd=root, check=True)
+        entries = json.loads(result.stdout)
+        assert [e["prompt_id"] for e in entries] == ["tp_001", "tp_002"]
+        assert all("\n" in e["prompt"] for e in entries), "newlines were lost"

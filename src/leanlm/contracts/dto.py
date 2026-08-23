@@ -304,6 +304,7 @@ class ModelResponse(CanonicalObject):
     tokens_per_second: float = 0.0
     stop_reason: str = "eos"
     is_simulated: bool = False
+    truncated: bool = False
 
     def identity(self) -> tuple[str, ...]:
         return (self.model_id, self.text[:200])

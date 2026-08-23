@@ -35,6 +35,10 @@ class GenerationResult:
     inference_ms: float
     stop_reason: str = "eos"
     is_simulated: bool = False
+    # The budget ran out before the model finished. Whatever is in the text, it
+    # is not a completed answer -- and a figure that appears inside an unfinished
+    # thought must never be scored as one.
+    truncated: bool = False
     extra: dict = field(default_factory=dict)
 
     @property

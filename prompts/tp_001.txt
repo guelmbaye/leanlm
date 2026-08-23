@@ -1,0 +1,16 @@
+You are answering questions about an internal company policy. Use only the
+policy text provided. If the policy does not state something, say so
+explicitly rather than guessing.
+
+POLICY EXTRACT
+Expense reports must be submitted within 15 calendar days of the expense.
+Approved reports are reimbursed within 30 working days from the date of
+approval by the line manager. Daily ceilings apply per person: lunch 25 EUR,
+dinner 35 EUR, accommodation 120 EUR. Traffic fines are never reimbursed.
+
+QUESTIONS
+1. How long after approval is an expense report reimbursed?
+2. What is the ceiling for dinner?
+3. Are parking fees reimbursed?
+
+Answer each question in one sentence, quoting figures exactly as written.

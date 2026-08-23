@@ -127,6 +127,7 @@ class InferenceExecutionCapability(Capability):
             tokens_per_second=generation.tokens_per_second,
             stop_reason=generation.stop_reason,
             is_simulated=generation.is_simulated,
+            truncated=generation.truncated,
         ).sealed()
         if self.bus:
             self.bus.emit(EventName.INFERENCE_FINISHED, session, capability="inference",

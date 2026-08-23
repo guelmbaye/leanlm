@@ -560,6 +560,7 @@ class LlamaCppBinaryBackend(InferenceBackend):
         if cleaning_notes:
             self.last_cleaning_notes = tuple(cleaning_notes)
         return GenerationResult(
+            truncated=generated >= self.policy.max_output_tokens,
             text=text, backend=self.name, generated_tokens=generated,
             prompt_tokens=DEFAULT_TOKEN_COUNTER.count(prompt),
             first_token_latency_ms=round(first_ms, 3), inference_ms=total,
