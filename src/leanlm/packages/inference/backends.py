@@ -728,14 +728,40 @@ def build_backend(name: str, binding: ModelBinding, policy: GenerationPolicy,
     return BACKENDS[name](binding, policy, **options)  # type: ignore[arg-type]
 
 
+def _server_is_listening(host: str = "127.0.0.1", port: int = 8080) -> bool:
+    """Is a local llama-server already up?"""
+    import socket
+    try:
+        with socket.create_connection((host, port), timeout=0.3):
+            return True
+    except OSError:
+        return False
+
+
 def _auto_select(binding: ModelBinding) -> str:
+    """Preference order, corrected by measurement.
+
+    `llama-cli` used to come first among the binaries. It is now last, because
+    recent builds are a chat application: they apply the model's chat template,
+    which puts a hybrid reasoning model into thinking mode, and they wrap the
+    output in a banner and an echo of the prompt. On the same model, same
+    machine and same corpus, that cost 84 accuracy points -- 8% through the CLI
+    against 92% through the server -- and made throughput unmeasurable
+    (cv 0.66 against 0.01).
+
+    A running llama-server is therefore preferred over everything: it is the
+    configuration that produced a measurement worth reporting.
+    """
     has_model = bool(binding.path) and os.path.isfile(binding.path)
-    if has_model:
-        try:
-            import llama_cpp  # type: ignore # noqa: F401
-            return LlamaCppPythonBackend.name
-        except ImportError:
-            pass
-        if shutil.which("llama-cli"):
-            return LlamaCppBinaryBackend.name
+    if not has_model:
+        return SimulatedBackend.name
+    if _server_is_listening():
+        return LlamaCppServerBackend.name
+    try:
+        import llama_cpp  # type: ignore # noqa: F401
+        return LlamaCppPythonBackend.name
+    except ImportError:
+        pass
+    if shutil.which("llama-cli"):
+        return LlamaCppBinaryBackend.name
     return SimulatedBackend.name

@@ -679,3 +679,36 @@ tooling rather than the model: a simulator, a scratchpad scored as an answer,
 text the cleaner had mangled, and a chat session timed as generation. Each
 produced a plausible number. The only reason any of them was caught is that the
 answers were printed alongside the score.
+
+---
+
+## EDB-037 — A number without its configuration
+
+`competition.yaml` was edited to `backend: llama-server`. The next run reported
+8% again, because the command was `leanlm accuracy` and the default profile is
+`development`. Two configurations, an 84-point difference, and nothing on screen
+to tell them apart -- the profile appeared only in the JSON.
+
+**Two changes.**
+
+Every accuracy run now prints its configuration on the first line:
+
+```
+profile competition [52a7c420] | backend llama-server | model qwen3.5-2b Q4_0
+```
+
+A measurement is inseparable from the conditions that produced it. Putting those
+conditions in a file the reader has to open is putting them out of reach at the
+moment they matter.
+
+And `auto` now prefers a running `llama-server` over everything, with
+`llama-cli` demoted to last resort. That order is a conclusion from measurement,
+not a convention: on the same model, machine and corpus, the CLI cost 84
+accuracy points and made throughput unmeasurable. A default that reliably
+produces the wrong answer is not a neutral default.
+
+**The pattern across the last several findings.** Every one of them was a case
+of the tooling being measured instead of the model, and every one produced a
+plausible number. What broke the pattern each time was printing the evidence
+next to the score -- the answers, the phase, the configuration. The score alone
+was never enough to notice.

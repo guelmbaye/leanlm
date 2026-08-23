@@ -555,3 +555,46 @@ class TestEveryBackendCleans:
         from leanlm.packages.inference.cleaning import clean_generation
         text, _ = clean_generation("<think>only a thought</think>", "")
         assert text == ""   # reported as empty, not as a fabricated answer
+
+
+class TestAutoBackendPreference:
+    """The order is a conclusion from measurement, not a convention.
+
+    On the same model, machine and corpus: 8% accuracy through `llama-cli`
+    against 92% through `llama-server`, with throughput cv 0.66 against 0.01.
+    Recent llama-cli builds are a chat application -- they apply the chat
+    template, which puts a hybrid reasoning model into thinking mode, and wrap
+    the output in a banner and an echo. It is now the last resort.
+    """
+
+    def _select(self, tmp_path, monkeypatch, *, server: bool, cli: bool):
+        from leanlm.packages.inference import backends
+        model = tmp_path / "m.gguf"
+        model.write_bytes(b"GGUF" + b"\0" * 40)
+        monkeypatch.setattr(backends, "_server_is_listening", lambda *a, **k: server)
+        monkeypatch.setattr(backends.shutil, "which",
+                            lambda name: "/usr/bin/llama-cli" if cli else None)
+        monkeypatch.setitem(__import__("sys").modules, "llama_cpp", None)
+        return backends._auto_select(
+            ModelBinding(model_id="m", path=str(model)))
+
+    def test_a_running_server_wins(self, tmp_path, monkeypatch):
+        assert self._select(tmp_path, monkeypatch, server=True, cli=True) \
+            == "llama-server"
+
+    def test_the_cli_is_used_only_when_nothing_else_is(self, tmp_path, monkeypatch):
+        assert self._select(tmp_path, monkeypatch, server=False, cli=True) \
+            == "llama-cli"
+
+    def test_no_model_means_the_simulator(self, tmp_path, monkeypatch):
+        from leanlm.packages.inference import backends
+        monkeypatch.setattr(backends, "_server_is_listening", lambda *a, **k: True)
+        assert backends._auto_select(ModelBinding(model_id="m", path="")) \
+            == "simulated"
+
+    def test_the_probe_does_not_hang_when_nothing_listens(self):
+        from leanlm.packages.inference.backends import _server_is_listening
+        import time
+        started = time.monotonic()
+        _server_is_listening("127.0.0.1", 9)
+        assert time.monotonic() - started < 2.0

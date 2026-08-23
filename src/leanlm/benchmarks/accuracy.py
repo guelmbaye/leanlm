@@ -280,7 +280,17 @@ def evaluate_accuracy(runtime, evaluation_path: str | Path | None = None, *,
 
 
 def render_accuracy(summary: dict[str, Any]) -> str:
+    backend = summary.get("backend", {}) or {}
     lines = [
+        # Printed first, because a number read against the wrong configuration
+        # is worse than no number: a profile edited but not selected produced
+        # 8% where the intended one produced 92%, with nothing on screen to
+        # distinguish the two runs.
+        f"profile {summary.get('profile', '?')} "
+        f"[{summary.get('profile_fingerprint', '?')[:8]}] | "
+        f"backend {backend.get('backend', '?')} | "
+        f"model {backend.get('model_id', '?')} {backend.get('quantization', '')}",
+        "",
         f"accuracy on {summary['probes']} probes "
         f"({summary['answerable']} answerable, {summary['unanswerable']} not)",
         "",
