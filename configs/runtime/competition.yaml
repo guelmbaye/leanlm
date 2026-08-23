@@ -1,0 +1,102 @@
+# LeanLM runtime profile -- development
+# Daily work. Verbose telemetry, small output, tolerant of a missing model.
+id: competition
+version: 1.0.0
+description: Official submission. Frozen parameters, reproducible, minimal overhead.
+target_hardware: laptop-8gb
+backend: auto
+
+model:
+  id: qwen3.5-2b
+  path: models/Qwen3.5-2B-Q4_K_M.gguf
+  quantization: Q4_K_M
+  parameters: "3.8B"
+  context_tokens: 4096
+  sha256: "d6bd9f4175302658c1d704e44858842606652bbe53c56cd542e31ff10d0cfd58"
+  source_url: "https://huggingface.co/openresearchtools/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf"
+  license: "Apache-2.0"
+
+memory:
+  n_threads: null          # null -> cpu_count - 1
+  n_gpu_layers: 0
+  n_batch: 256
+  use_mmap: true
+  use_mlock: false
+  model_footprint_mb: 2600
+
+inference:
+  temperature: 0.0
+  top_k: 40
+  top_p: 0.95
+  repeat_penalty: 1.1
+  max_output_tokens: 512
+  seed: 20260601
+  timeout_s: 300
+
+budget:
+  min_context_tokens: 256
+  prompt_overhead_tokens: 160
+  ram_headroom_mb: 512
+  ram_soft_floor_mb: 900
+  thermal_warn_c: 78
+  thermal_critical_c: 92
+  cpu_warn_percent: 85
+  max_passages_hard_cap: 12
+
+optimization:
+  near_duplicate_threshold: 0.92
+  merge_adjacent_below_tokens: 70
+  drop_below_content_words: 4
+  keep_structure: true
+
+retrieval:
+  bm25_k1: 1.4
+  bm25_b: 0.72
+  candidate_pool: 40
+  section_match_boost: 0.22
+  title_match_boost: 0.10
+  table_boost: 0.06
+  exact_phrase_boost: 0.18
+  numeric_question_boost: 0.12
+  diversity_lambda: 0.35
+  max_per_document: 4
+  min_score: 0.02
+
+validation:
+  sentence_grounding_threshold: 0.34
+  grounding_pass_threshold: 0.60
+  require_citations: true
+  high_confidence_grounding: 0.85
+  medium_confidence_grounding: 0.60
+  shingle_size: 3
+
+prompt:
+  template_id: leanlm.enterprise.grounded
+  template_version: 1.2.0
+  cite_evidence: true
+  include_section_path: true
+  max_evidence_chars: 20000
+
+segmentation:
+  target_tokens: 180
+  max_tokens: 320
+  min_tokens: 24
+  merge_below_tokens: 90
+  keep_headings_as_units: false
+
+ingestion:
+  max_file_size_mb: 25
+  min_extractable_chars: 40
+  max_documents: 500
+
+performance:
+  sample_interval_s: 1.0
+  thermal_warn_c: 78
+  thermal_critical_c: 92
+  memory_warn_ratio: 0.88
+
+telemetry:
+  log_level: error
+  structured_logs: true
+  enforce_offline: true
+  record_events: false

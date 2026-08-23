@@ -1,0 +1,38 @@
+# ADTC scoring reference points.
+#
+# Taken from the published ADTC 2026 judging criteria (adtc-2026.devpost.com/rules,
+# read 18 August 2026). The weights were confirmed as assumed; three details were
+# not, and are now corrected:
+#
+#   * throughput is normalised against a fixed 15.0 tok/s reference;
+#   * efficiency is (7 GB - peak) / 7 GB, not a fraction of 8 GB;
+#   * the thermal penalty is a flat 10 points above 85 C, not a ramp from 78 C.
+#
+# A score here is still not a verdict. The official accuracy stage runs lm-eval
+# `arc_easy` against the model in-process, plus qualitative judging of four
+# prompts. Our `leanlm accuracy` measures something different -- whether the
+# retrieval layer answers correctly from a corpus -- and the two must not be
+# confused. Substituting ours for theirs would report a number the judges will
+# never compute.
+scoring:
+  accuracy_weight: 0.50
+  throughput_weight: 0.30
+  efficiency_weight: 0.20
+
+  # Read from the official profiler's own scoring table:
+  #   S_perf = min(TPS / 15.0, 1.0) * 100
+  #   S_eff  = max(0, (7.0 - peak_rss_gb) / 7.0) * 100
+  tps_reference: 15.0
+  ram_limit_gb: 7.0
+
+  # "10 points deducted if core/package temperature exceeds 85 C or if thermal
+  # throttling is flagged." A step, not a ramp.
+  thermal_limit_c: 85.0
+  thermal_penalty: 0.10
+
+  # Available RAM below this is treated as an out-of-memory kill: on an 8 GB
+  # laptop it is the most expensive failure available to us, so it ends the run
+  # at zero rather than reducing the score.
+  oom_margin_mb: 256.0
+
+  rubric_source: official-profiler

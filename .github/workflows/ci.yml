@@ -1,0 +1,84 @@
+# Competition-as-Code: the rules of the ADTC expressed as a pipeline that fails
+# the build, rather than as a checklist someone has to remember to read.
+name: leanlm-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Deliberately no dependency installation on this job: LeanLM claims to
+      # run on a machine with nothing installed, and this job proves it.
+      - name: Install the package only
+        run: pip install -e .
+
+      - name: Capability-to-code mapping
+        run: python -m leanlm.apps.cli ccm
+
+      - name: Tests, stdlib only
+        run: |
+          pip install pytest
+          python -m pytest -q
+
+      - name: Runtime profiles validate
+        run: python -m leanlm.apps.cli profiles
+
+  full-stack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install with every optional dependency
+        run: |
+          pip install -e ".[all,dev]"
+
+      - name: Lint
+        run: ruff check src tests
+
+      - name: Tests with coverage
+        run: python -m pytest -q --cov=leanlm --cov-report=term-missing
+
+      - name: Benchmark smoke run
+        run: |
+          python -m leanlm.apps.cli ingest datasets/enterprise_en
+          python -m leanlm.apps.cli --profile benchmark bench \
+            --scenario S1 S6 --repeat 2 --warmup 0 --allow-simulated --quiet
+
+      - name: Submission gate must refuse simulated results
+        run: |
+          set +e
+          python -m leanlm.apps.cli submission --output dist/submission \
+            --results benchmarks/results/latest.json
+          status=$?
+          set -e
+          if [ "$status" -ne 2 ]; then
+            echo "SUB-006 did not block a simulated campaign (exit $status)"
+            exit 1
+          fi
+          echo "compliance gate correctly refused simulated results"
+
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmarks/results/
+          if-no-files-found: ignore

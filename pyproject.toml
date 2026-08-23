@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "leanlm"
+version = "1.0.0"
+description = "LeanLM -- offline LLM optimization layer for commodity laptops (ADTC 2026)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+# No mandatory dependency: the target machine may have no working package index.
+dependencies = []
+
+[project.optional-dependencies]
+documents = ["pypdf>=4.0", "pdfminer.six>=20221105"]
+metrics = ["psutil>=5.9"]
+config = ["PyYAML>=6.0"]
+
+# Everything that replaces a built-in fallback, and nothing that compiles.
+# This is the one to install: pure Python, no toolchain, no Windows long-path
+# problem. `full` used to be the recommendation and was wrong on Windows -- pip
+# aborts the whole transaction when llama-cpp-python fails to unpack, so a
+# single heavyweight dependency denied the user the four lightweight ones.
+optional = [
+  "pypdf>=4.0", "pdfminer.six>=20221105", "psutil>=5.9", "PyYAML>=6.0",
+]
+
+# The in-process GGUF backend. Builds from source unless a prebuilt wheel is
+# available for the platform, so it needs a C++ toolchain, and on Windows it
+# needs long-path support enabled. LeanLM does not require it: `llama-server`
+# and `llama-cli` from an official llama.cpp release work without any Python
+# binding at all.
+runtime = ["llama-cpp-python>=0.3.0"]
+
+dev = ["pytest>=7.4", "pytest-cov>=4.1", "ruff>=0.5"]
+full = [
+  "llama-cpp-python>=0.3.0", "pypdf>=4.0", "pdfminer.six>=20221105",
+  "psutil>=5.9", "PyYAML>=6.0",
+]
+# Kept so that documented commands do not break, but it carries the compiled
+# backend: prefer `optional`.
+all = [
+  "llama-cpp-python>=0.3.0", "pypdf>=4.0", "pdfminer.six>=20221105",
+  "psutil>=5.9", "PyYAML>=6.0",
+]
+
+[project.scripts]
+leanlm = "leanlm.apps.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --strict-markers"
+markers = [
+  "requires_model: needs a real GGUF model on disk",
+  "slow: long running benchmark test",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["B008"]

@@ -1,0 +1,59 @@
+# Benchmark harness configuration (BHB).
+benchmark:
+  repeat: 5
+  warmup: 1
+  profile: benchmark
+  results_dir: benchmarks/results
+  baseline_file: benchmarks/results/baseline.json
+  regression:
+    throughput_pct: 5.0
+    memory_pct: 8.0
+    latency_pct: 10.0
+    grounding_pct: 5.0
+scenarios:
+  - id: S1
+    name: Small document
+    hypothesis: "Minimal latency floor on a short document"
+    documents: 1
+    questions:
+      - "What is the reimbursement deadline for expense reports?"
+    adtc_criteria: [Throughput, Memory]
+  - id: S2
+    name: Medium corpus
+    hypothesis: "Nominal behaviour on a realistic corpus"
+    documents: 0
+    questions:
+      - "What is the daily ceiling for meals?"
+      - "Who approves a request for exceptional leave?"
+    adtc_criteria: [Accuracy, Throughput]
+  - id: S3
+    name: Large corpus
+    hypothesis: "Context budgeting keeps memory flat as the corpus grows"
+    documents: 0
+    questions:
+      - "Summarise the remote work policy."
+    adtc_criteria: [Memory, Thermal]
+  - id: S4
+    name: Repeated queries
+    hypothesis: "Repeated identical requests stay stable"
+    documents: 0
+    repeat_question: 3
+    questions:
+      - "What is the reimbursement deadline for expense reports?"
+    adtc_criteria: [Throughput, Thermal]
+  - id: S5
+    name: Cold start
+    hypothesis: "First request after load carries the initialisation cost"
+    documents: 0
+    cold_start: true
+    questions:
+      - "Which expenses are non-reimbursable?"
+    adtc_criteria: [Throughput]
+  - id: S6
+    name: Unanswerable question
+    hypothesis: "The system declares insufficiency instead of inventing"
+    documents: 0
+    expect_insufficient: true
+    questions:
+      - "What is the current share price of Tesla?"
+    adtc_criteria: [Accuracy]

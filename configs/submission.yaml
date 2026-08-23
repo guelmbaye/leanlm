@@ -1,0 +1,29 @@
+# Submission packaging policy (CAP-008).
+#
+# Taken from adtc-2026-submission-template, not inferred. The previous version of
+# this file listed nine required files we had invented; the template asks for
+# four and a directory. See docs/ADTC-SUBMISSION.md.
+submission:
+  required_files:
+    - metadata.json
+    - download_model.sh
+    - REPORT.md
+    - .gitignore
+  required_dirs:
+    - model
+  forbidden_patterns:
+    - "*.gguf"
+    - "*.bin"
+    - "*.safetensors"
+    - ".env"
+    - "*.key"
+    - "*.pem"
+  report_sections:
+    - Problem
+    - Design Decisions
+    - Constraints
+    - Benchmarks
+  required_test_prompts: 2
+  min_report_chars: 1200
+  allow_simulated_results: false
+  max_package_mb: 25

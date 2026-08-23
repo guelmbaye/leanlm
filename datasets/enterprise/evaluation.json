@@ -1,0 +1,85 @@
+{
+  "_comment": "Ground truth for accuracy scoring. This file is .json, a format the ingestion policy does not accept, so it cannot contaminate retrieval. Asserted by tests/capability/test_accuracy.py.",
+  "corpus": "datasets/enterprise",
+  "version": "1.0.0",
+  "questions": [
+    {
+      "id": "Q01",
+      "question": "Quel est le delai de remboursement des notes de frais ?",
+      "must_contain": ["30"],
+      "must_not_contain": ["45"],
+      "expected_source": "politique_notes_de_frais.md",
+      "note": "15 days is the submission deadline, not the reimbursement delay; confusing the two is the likely failure"
+    },
+    {
+      "id": "Q02",
+      "question": "Quel est le plafond pour un repas du midi ?",
+      "must_contain": ["25"],
+      "must_not_contain": [],
+      "expected_source": "politique_notes_de_frais.md",
+      "note": "35 EUR is the evening ceiling, stated in the same table"
+    },
+    {
+      "id": "Q03",
+      "question": "Quel est le plafond pour un hebergement ?",
+      "must_contain": ["120"],
+      "expected_source": "politique_notes_de_frais.md"
+    },
+    {
+      "id": "Q04",
+      "question": "Combien de jours de teletravail par semaine sont autorises ?",
+      "must_contain": ["3"],
+      "expected_source": "procedure_teletravail.md"
+    },
+    {
+      "id": "Q05",
+      "question": "Quelle est l'indemnite mensuelle pour la connexion internet en teletravail ?",
+      "must_contain": ["20"],
+      "expected_source": "procedure_teletravail.md"
+    },
+    {
+      "id": "Q06",
+      "question": "Combien de jours de conges payes sont acquis par an ?",
+      "must_contain": ["25"],
+      "expected_source": "politique_conges.md"
+    },
+    {
+      "id": "Q07",
+      "question": "Combien de jours de conge exceptionnel pour un mariage ?",
+      "must_contain": ["4"],
+      "expected_source": "politique_conges.md"
+    },
+    {
+      "id": "Q08",
+      "question": "Quel preavis faut-il pour resilier le contrat de prestation ?",
+      "must_contain": ["trois", "3"],
+      "match": "any",
+      "expected_source": "contrat_prestation_exemple.txt"
+    },
+    {
+      "id": "Q09",
+      "question": "Quelle est l'indemnite forfaitaire de recouvrement en cas de retard de paiement ?",
+      "must_contain": ["40"],
+      "expected_source": "contrat_prestation_exemple.txt"
+    },
+    {
+      "id": "Q10",
+      "question": "Combien de temps dure l'obligation de confidentialite apres la fin du contrat ?",
+      "must_contain": ["cinq", "5"],
+      "match": "any",
+      "expected_source": "contrat_prestation_exemple.txt"
+    },
+    {
+      "id": "Q11",
+      "question": "Quel est le cours de l'action Tesla aujourd'hui ?",
+      "unanswerable": true,
+      "note": "no corpus document contains market data; the only correct behaviour is to decline"
+    },
+    {
+      "id": "Q12",
+      "question": "Quelle est la politique de remboursement des frais de scolarite des enfants ?",
+      "unanswerable": true,
+      "note": "a plausible enterprise topic this corpus does not cover; the trap is answering from an adjacent policy"
+    }
+  ]
+}

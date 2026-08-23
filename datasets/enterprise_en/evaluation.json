@@ -1,0 +1,85 @@
+{
+  "_comment": "Ground truth for the English corpus. A .json file cannot be ingested, so the answer key cannot contaminate retrieval. Mirrors datasets/enterprise/evaluation.json question for question, so the two languages are directly comparable.",
+  "corpus": "datasets/enterprise_en",
+  "language": "en",
+  "version": "1.0.0",
+  "questions": [
+    {
+      "id": "Q01",
+      "question": "What is the reimbursement deadline for expense reports?",
+      "must_contain": ["30"],
+      "must_not_contain": ["45"],
+      "expected_source": "expense_policy.md",
+      "note": "15 days is the submission deadline, not the reimbursement delay"
+    },
+    {
+      "id": "Q02",
+      "question": "What is the ceiling for a lunch?",
+      "must_contain": ["25"],
+      "expected_source": "expense_policy.md",
+      "note": "35 EUR is the dinner ceiling, stated in the same table"
+    },
+    {
+      "id": "Q03",
+      "question": "What is the ceiling for accommodation?",
+      "must_contain": ["120"],
+      "expected_source": "expense_policy.md"
+    },
+    {
+      "id": "Q04",
+      "question": "How many days of remote work per week are allowed?",
+      "must_contain": ["3"],
+      "expected_source": "remote_work_procedure.md"
+    },
+    {
+      "id": "Q05",
+      "question": "What is the monthly allowance for the internet connection when working remotely?",
+      "must_contain": ["20"],
+      "expected_source": "remote_work_procedure.md"
+    },
+    {
+      "id": "Q06",
+      "question": "How many days of paid leave are accrued per year?",
+      "must_contain": ["25"],
+      "expected_source": "leave_policy.md"
+    },
+    {
+      "id": "Q07",
+      "question": "How many days of exceptional leave are granted for a marriage?",
+      "must_contain": ["4"],
+      "expected_source": "leave_policy.md"
+    },
+    {
+      "id": "Q08",
+      "question": "What notice period is required to terminate the service contract?",
+      "must_contain": ["three", "3"],
+      "match": "any",
+      "expected_source": "service_contract_extract.txt"
+    },
+    {
+      "id": "Q09",
+      "question": "What is the flat recovery indemnity for a late payment?",
+      "must_contain": ["40"],
+      "expected_source": "service_contract_extract.txt"
+    },
+    {
+      "id": "Q10",
+      "question": "How long does the confidentiality obligation last after the contract ends?",
+      "must_contain": ["five", "5"],
+      "match": "any",
+      "expected_source": "service_contract_extract.txt"
+    },
+    {
+      "id": "Q11",
+      "question": "What is the current share price of Tesla?",
+      "unanswerable": true,
+      "note": "no corpus document contains market data; the only correct behaviour is to decline"
+    },
+    {
+      "id": "Q12",
+      "question": "What is the reimbursement policy for children's school fees?",
+      "unanswerable": true,
+      "note": "a plausible enterprise topic this corpus does not cover; the trap is answering from the expense policy, which shares the words reimbursement and fees"
+    }
+  ]
+}

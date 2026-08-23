@@ -1,0 +1,94 @@
+# Produce a measurement in CI, on a runner that matches the profile's vCPU count.
+#
+# The point is not the free minutes. A measurement produced here is logged,
+# timestamped and re-runnable by anyone -- including a judge wondering whether
+# the numbers are real. That is a stronger position than a JSON file whose
+# provenance rests on our word.
+#
+# Manual only: this builds llama.cpp and compiles llama-cpp-python, so it is not
+# something to run on every push.
+name: measure
+
+on:
+  workflow_dispatch:
+    inputs:
+      submission_dir:
+        description: "Directory holding metadata.json and download_model.sh"
+        default: "dist/submission"
+      memory:
+        description: "Container memory cap (the profile is 8 GB, scored against 7)"
+        default: "7.5g"
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest        # 4 vCPU, matching the profile's vCPU count
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record the runner
+        run: |
+          echo "cpus:   $(nproc)"
+          echo "memory: $(free -g | awk '/^Mem:/ {print $2} ') GB"
+          lscpu | grep -E "Model name|MHz" || true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the package
+        run: pip install -e .
+
+      - name: Build the submission package
+        run: |
+          python -m leanlm.apps.cli submission \
+            --output "${{ inputs.submission_dir }}" \
+            --allow-missing-results \
+            --commit "${GITHUB_SHA}" \
+            --repository "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+        continue-on-error: true   # the gate blocks until a model is declared
+
+      - name: Build the profiler image
+        run: |
+          git clone --depth 1 \
+            https://github.com/Africa-Deep-Tech-Foundation/adtc-profiler.git /tmp/profiler
+          docker build -t adtc-profiler:latest /tmp/profiler
+
+      - name: Fetch the weights
+        working-directory: ${{ inputs.submission_dir }}
+        run: bash download_model.sh
+
+      # The runner has more RAM than the profile, so nothing would swap and the
+      # failure that disqualifies could not be observed. Cap it.
+      - name: Profile under the memory cap
+        run: |
+          mkdir -p artifacts
+          docker run --rm \
+            --memory="${{ inputs.memory }}" \
+            --cpus=4 \
+            -v "${{ github.workspace }}/${{ inputs.submission_dir }}:/submission:ro" \
+            -v "${{ github.workspace }}/artifacts:/artifacts" \
+            adtc-profiler:latest run \
+            --submission /submission \
+            --mode participant \
+            --output /artifacts/submission.json
+
+      - name: Summarise
+        run: |
+          python - <<'PY'
+          import json
+          report = json.load(open("artifacts/submission.json", encoding="utf-8"))
+          env = report.get("environment", {})
+          print("measured_on:", env.get("measured_on"))
+          print("cpu:", env.get("cpu_model"), "| ram:", env.get("ram_gb"), "GB")
+          throughput = report.get("throughput", {})
+          memory = report.get("memory", {})
+          print("tok/s:", throughput.get("tokens_per_second_generation"))
+          print("peak RSS MB:", memory.get("peak_rss_mb"))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: measurement
+          path: artifacts/
