@@ -36,7 +36,7 @@ sudo apt-get update -qq
 # profiler's accuracy stage compiles llama-cpp-python from source.
 sudo apt-get install -y -qq \
   build-essential cmake git curl ccache \
-  python3 python3-pip python3-venv python3-dev \
+  python3 python3-pip python3-venv python3-dev pipx \
   lm-sensors
 
 step "python version"
@@ -64,9 +64,31 @@ else
 fi
 
 step "adtc-profiler"
-# Compiles llama-cpp-python for the accuracy stage; expect several minutes.
-python3 -m pip install --quiet --upgrade pip
-python3 -m pip install --quiet "git+https://github.com/Africa-Deep-Tech-Foundation/adtc-profiler.git"
+# Ubuntu 24.04 enforces PEP 668: a system-wide `pip install` is refused outright.
+# pipx gives the tool its own environment and puts the entry point on PATH,
+# which is what a command-line application wants anyway. The venv fallback
+# exists because pipx is not present on every derivative.
+#
+# Either route compiles llama-cpp-python for the accuracy stage. Expect minutes.
+PROFILER_URL="git+https://github.com/Africa-Deep-Tech-Foundation/adtc-profiler.git"
+
+if have pipx; then
+  pipx install --force "${PROFILER_URL}"
+  pipx ensurepath >/dev/null 2>&1 || true
+else
+  echo "  pipx unavailable; falling back to a virtualenv"
+  VENV="${VENV:-${HOME}/.venvs/adtc-profiler}"
+  python3 -m venv "${VENV}"
+  "${VENV}/bin/pip" install --quiet --upgrade pip
+  "${VENV}/bin/pip" install --quiet "${PROFILER_URL}"
+  mkdir -p "${PREFIX}/bin"
+  ln -sf "${VENV}/bin/adtc-profiler" "${PREFIX}/bin/adtc-profiler"
+  echo "  installed into ${VENV}, linked from ${PREFIX}/bin"
+fi
+
+# pipx and the fallback both land in ~/.local/bin, which is not on PATH in a
+# fresh non-login shell.
+export PATH="${HOME}/.local/bin:${PREFIX}/bin:${PATH}"
 
 step "sensors"
 # Harmless on a VM, where no thermal device exists to detect.
@@ -74,6 +96,14 @@ sudo sensors-detect --auto >/dev/null 2>&1 || true
 
 step "ready"
 check
+
+if ! have adtc-profiler; then
+  echo
+  echo "  adtc-profiler is installed but not on PATH in this shell." >&2
+  echo "  Run:  export PATH=\"\${HOME}/.local/bin:\$PATH\"" >&2
+  echo "  and add that line to ~/.bashrc." >&2
+  exit 1
+fi
 
 cat <<'NEXT'
 

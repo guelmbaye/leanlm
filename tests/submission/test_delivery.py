@@ -411,3 +411,41 @@ class TestWindowsProvisioning:
         """Windows PowerShell 5.1 does not always negotiate it, and GitHub
         requires it."""
         assert "Tls12" in self._script()
+
+
+class TestUbuntuProvisioning:
+    """Ubuntu 24.04 refuses a system-wide pip install.
+
+    Reported from a fresh droplet: llama.cpp built, then the profiler install
+    died on `externally-managed-environment`. PEP 668 has been enforced by
+    Debian and Ubuntu since 23.04, so a script that calls `pip install`
+    system-wide is broken on the distribution most likely to be used for the
+    measurement.
+    """
+
+    def _script(self) -> str:
+        from pathlib import Path
+        return (Path(__file__).resolve().parents[2]
+                / "scripts/provision_ubuntu.sh").read_text(encoding="utf-8")
+
+    def test_it_does_not_pip_install_system_wide(self):
+        script = self._script()
+        assert "python3 -m pip install --quiet \"git+" not in script
+
+    def test_it_uses_pipx_with_a_virtualenv_fallback(self):
+        """pipx is not present on every derivative; a venv always is."""
+        script = self._script()
+        assert "pipx install" in script
+        assert "python3 -m venv" in script
+
+    def test_the_entry_point_ends_up_on_path(self):
+        script = self._script()
+        assert "ensurepath" in script or "ln -sf" in script
+        assert ".local/bin" in script
+
+    def test_it_fails_loudly_when_the_profiler_is_unreachable(self):
+        """Reporting success on a tool the next step cannot call wastes the one
+        thing in short supply before a deadline."""
+        script = self._script()
+        assert "not on PATH in this shell" in script
+        assert "exit 1" in script
