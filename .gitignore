@@ -10,3 +10,4 @@ benchmarks/results/*.json
 !benchmarks/results/.gitkeep
 .pytest_cache/
 .coverage
+tools/
