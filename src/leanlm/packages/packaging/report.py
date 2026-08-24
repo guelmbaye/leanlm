@@ -47,6 +47,77 @@ def _naive_table(naive: dict[str, Any]) -> str:
     return table
 
 
+def _quantization_note(request: SubmissionRequest) -> str:
+    """Say what the chosen quantization actually cost, not what a typical one does.
+
+    The first version of this paragraph asserted that Q4_K_M lands near 2.5 GB.
+    It said so in a report describing a Q4_0 file of 1.16 GB, which is the kind
+    of stale boilerplate a reader checks and then distrusts the rest of.
+    """
+    profiler = request.profiler_report or {}
+    peak = ((profiler.get("memory") or {}).get("peak_rss_mb") or 0) / 1024.0
+    if not peak:
+        return ""
+    return (f" At this quantization the loaded model and its KV cache peaked at "
+            f"{peak:.2f} GB of the 7 GB budget.")
+
+
+def _peak_gb(request: SubmissionRequest) -> str:
+    profiler = request.profiler_report or {}
+    peak = ((profiler.get("memory") or {}).get("peak_rss_mb") or 0) / 1024.0
+    return f"{peak:.2f} GB" if peak else "not yet measured"
+
+
+def _official_peak(request: SubmissionRequest) -> str:
+    """The profiler's figure, never LeanLM's own process RSS.
+
+    LeanLM drives an out-of-process backend, so its own RSS is around 32 MB
+    while a 1.16 GB model sits in llama-server. Printing 32 MB in a memory table
+    is not a small discrepancy -- efficiency is 20% of the score, and a figure
+    that omits the model measures nothing about the model.
+    """
+    profiler = request.profiler_report or {}
+    peak = (profiler.get("memory") or {}).get("peak_rss_mb")
+    if not peak:
+        return ("not measured here -- LeanLM's own process excludes the model, "
+                "which runs under llama-server")
+    return f"{peak:.0f} MB ({peak / 1024:.2f} GB of a 7 GB budget)"
+
+
+def _official_block(request: SubmissionRequest) -> str:
+    """The numbers the organisers' own tool produced, kept apart from ours."""
+    profiler = request.profiler_report or {}
+    if not profiler:
+        return ("The official profiler has not been run yet. The figures above "
+                "come from our own harness and are not a substitute.")
+    environment = profiler.get("environment", {})
+    throughput = profiler.get("throughput", {})
+    memory = profiler.get("memory", {})
+    tps = throughput.get("tokens_per_second_generation") or 0.0
+    peak_gb = (memory.get("peak_rss_mb") or 0) / 1024.0
+    accuracy = profiler.get("accuracy") or []
+    rows = [
+        "| Metric | Value |",
+        "|---|---|",
+        f"| generation throughput | {tps:.2f} tok/s |",
+        f"| peak RSS | {peak_gb:.2f} GB |",
+        f"| S_perf = min(TPS/15, 1) | **{min(tps / 15.0, 1.0) * 100:.1f}** |",
+        f"| S_eff = (7 - peak)/7 | **{max(0.0, (7.0 - peak_gb) / 7.0) * 100:.1f}** |",
+    ]
+    for entry in accuracy:
+        rows.append(f"| {entry.get('benchmark')} ({entry.get('samples')} samples) "
+                    f"| {entry.get('score')} {entry.get('metric', '')} |")
+    thermal = profiler.get("cpu_thermal", {})
+    note = ""
+    if thermal.get("core_temp_c_peak") is None:
+        note = ("\n\nNo thermal penalty applies: the measurement ran in a cloud "
+                "instance, where the hypervisor exposes no CPU temperature. The "
+                "audit environment has the same limitation.")
+    return (f"Measured on {environment.get('cpu_model', 'unstated')} with "
+            f"{environment.get('ram_gb', '?')} GB, `measured_on: "
+            f"{environment.get('measured_on', '?')}`.\n\n" + "\n".join(rows) + note)
+
+
 def render_report(request: SubmissionRequest) -> str:
     summary = request.benchmark_summary or {}
     accuracy = request.accuracy_summary or {}
@@ -107,12 +178,13 @@ because a wrong figure is acted upon.
 ## 2. Design Decisions
 
 **Model.** {model.name or 'A GGUF instruct model'} at {model.quantization},
-{model.parameters_estimate or 'sized'} to leave headroom on an 8 GB machine.
-The quantization level is the usual compromise: Q4_K_M keeps the file near
-2.5 GB, which leaves room for the KV cache and for the machine not to swap.
-Swapping is the difference between a usable tool and an unusable one, and it
-does not show up in an average — which is why peak RSS is reported below, not
-the final figure.
+{model.parameters_estimate or 'sized'}, chosen to leave headroom on an 8 GB
+machine.{_quantization_note(request)}
+
+Peak memory is reported below rather than the final figure, because a run that
+briefly touched the ceiling is a run that nearly swapped — and swapping is the
+difference between a usable tool and an unusable one. It does not show up in an
+average.
 
 **Context window capped at 4096 tokens** regardless of what the model
 advertises. The KV cache scales with context, not with weights; a large
@@ -135,7 +207,7 @@ question.
 
 | Constraint | Consequence |
 |---|---|
-| 8 GB RAM, 4 vCPU, integrated GPU | model + cache must stay near 2.5 GB; peak matters, not mean |
+| 8 GB RAM, 4 vCPU, integrated GPU | model and cache measured at {_peak_gb(request)}; peak matters, not mean |
 | No network during inference | enforced, not promised: non-loopback sockets raise and are recorded |
 | Documents are confidential | nothing leaves the machine; there is no telemetry endpoint to disable |
 | Intermittent connectivity | zero mandatory Python dependencies; every optional one has a fallback |
@@ -157,11 +229,20 @@ under profile `{(summary.get('profile') or {}).get('id', 'n/a')}`
 | throughput | {_metric(summary, 'tokens_per_second', ' tok/s')} |
 | first token | {_metric(summary, 'first_token_latency_ms', ' ms', 0)} |
 | total per request | {_metric(summary, 'total_ms', ' ms', 1)} |
-| peak RSS | {_metric(summary, 'peak_rss_mb', ' MB', 0)} |
+| peak RSS (whole system, official profiler) | {_official_peak(request)} |
 | prompt size | {_metric(summary, 'prompt_tokens', ' tokens', 0)} |
 | corpus not sent to the model | {_metric(summary, 'context_compression_ratio', '', 2)} |
 
-### Accuracy
+### Official profiler
+
+{_official_block(request)}
+
+The accuracy row above is the base model's general knowledge, measured by the
+organisers' tool. The figures below measure something different: whether the
+retrieval layer answers correctly *from a corpus*. Neither replaces the other,
+and adding them together would be meaningless.
+
+### Retrieval accuracy, our own evaluation set
 
 {accuracy_block}
 
