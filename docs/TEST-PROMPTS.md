@@ -99,14 +99,54 @@ instruction-following (*exactly three bullets*, one topic each), figure
 retention across a longer input, and restraint — the clauses say nothing about
 penalties for early termination, and a model that adds some has failed.
 
+## Both prompts end with an answer cue, and that is not cosmetic
+
+Tested against the bare model through `/completion`, the first draft of tp_001
+produced this:
+
+```
+Answer each question in one sentence, quoting figures exactly as written.
+Answer each question in one sentence, quoting figures exactly.
+
+<think>
+Thinking Process:
+1. **Analyze the Request:** ...
+```
+
+The model continued the prompt, then reasoned for four hundred tokens and was
+cut off without answering a single question.
+
+LeanLM's own prompt does not have this problem, and the reason is one line: it
+ends with `### Answer`, which leaves the model nothing to do but answer. A raw
+completion prompt that ends with an instruction invites the model to keep
+writing instructions.
+
+So both prompts now end with an explicit cue and the first token of the expected
+shape:
+
+```
+ANSWERS
+1.
+```
+
+This is worth understanding rather than copying. A judge running these prompts
+gets whatever the prompt's ending invites. Ending on an instruction invites
+commentary; ending on the shape of the answer invites the answer.
+
 ## Test them before submitting
 
 Run each against the bare model, the way a judge would:
 
+Through the server, which is how the answer will actually be produced -- not
+through `llama-cli`, which is a chat application and will reason at you:
+
 ```bash
-leanlm ask --dry-run "anything"          # shows the invocation shape
-llama-cli -m models/<model>.gguf -f prompts/tp_001.txt -n 256 -c 4096 -t 4 \
-  --temp 0.2 --no-display-prompt --single-turn
+curl -s http://127.0.0.1:8080/completion -H 'Content-Type: application/json' \
+  -d "$(python3 -c '
+import json
+print(json.dumps({"prompt": open("prompts/tp_001.txt").read(),
+                  "n_predict": 300, "temperature": 0.2}))')" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["content"])'
 ```
 
 Read the answer as a sceptic. Is every figure right? Did it refuse what it

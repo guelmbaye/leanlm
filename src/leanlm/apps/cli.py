@@ -88,6 +88,16 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     binaries = {name: _shutil.which(name)
                 for name in ("llama-bench", "llama-cli", "llama-server")}
     found = [n for n, p in binaries.items() if p]
+    # Whether a server is already up decides which backend `auto` picks, so it
+    # belongs on screen next to the binaries rather than being inferred from a
+    # port-in-use error.
+    from ..packages.inference.backends import _server_is_listening
+    if _server_is_listening():
+        lines.append("  llama-server     : listening on 127.0.0.1:8080 "
+                     "(auto will use it)")
+    else:
+        lines.append("  llama-server     : not running")
+
     if found:
         lines.append(f"  llama.cpp binaries: {', '.join(found)}")
         # Which flags this build accepts, asked rather than assumed. `-no-cnv`

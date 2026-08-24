@@ -521,3 +521,27 @@ class TestParameterDeclaration:
     def test_an_undeclared_count_says_nothing(self, tmp_path):
         from leanlm.runtime.profiles import parameter_mismatch
         assert parameter_mismatch(self._profile(tmp_path, "")) == ""
+
+
+class TestServerVisibility:
+    """Whether a server is already up decides which backend `auto` picks.
+
+    Starting a second one fails with "couldn't bind HTTP server socket", which
+    reads as a problem rather than as confirmation that the first is still
+    serving. `doctor` now says so directly.
+    """
+
+    def test_doctor_reports_the_server_state(self):
+        from pathlib import Path
+        cli = (Path(__file__).resolve().parents[2]
+               / "src/leanlm/apps/cli.py").read_text(encoding="utf-8")
+        assert "listening on 127.0.0.1:8080" in cli
+        assert "not running" in cli
+
+    def test_the_probe_is_cheap_enough_to_run_in_doctor(self):
+        import time
+
+        from leanlm.packages.inference.backends import _server_is_listening
+        started = time.monotonic()
+        _server_is_listening("127.0.0.1", 9)
+        assert time.monotonic() - started < 1.0
