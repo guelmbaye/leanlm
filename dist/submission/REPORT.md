@@ -4,7 +4,7 @@
 **Runtime:** llama.cpp · **Quantization:** GGUF Q4_0 ·
 **Parameters:** 1.9B
 **Repository:** https://github.com/guelmbaye/leanlm
-**Commit:** `cb1dcd2fe37e5c7ea6c27889ebf7427689c74596`
+**Commit:** `1b1c0e6ac392355881ecc1d56f2351949ef3f293`
 
 ---
 
@@ -29,7 +29,7 @@ because a wrong figure is acted upon.
 
 **Model.** qwen3.5-2b at GGUF Q4_0,
 1.9B, chosen to leave headroom on an 8 GB
-machine.
+machine. At this quantization the loaded model and its KV cache peaked at 1.98 GB of the 7 GB budget.
 
 Peak memory is reported below rather than the final figure, because a run that
 briefly touched the ceiling is a run that nearly swapped — and swapping is the
@@ -57,35 +57,45 @@ question.
 
 | Constraint | Consequence |
 |---|---|
-| 8 GB RAM, 4 vCPU, integrated GPU | model and cache measured at not yet measured; peak matters, not mean |
+| 8 GB RAM, 4 vCPU, integrated GPU | model and cache measured at 1.98 GB; peak matters, not mean |
 | No network during inference | enforced, not promised: non-loopback sockets raise and are recorded |
 | Documents are confidential | nothing leaves the machine; there is no telemetry endpoint to disable |
 | Intermittent connectivity | zero mandatory Python dependencies; every optional one has a fallback |
 | Answers are acted upon | every sentence is checked against the passages actually sent |
 
-Environment for the measurements below: unstated,
-Python ?, ? CPUs,
-? MB RAM.
+Environment for the measurements below: Linux-6.8.0-124-generic-x86_64-with-glibc2.39,
+Python 3.12.3, 4 CPUs,
+7941.2 MB RAM.
 
 ## 4. Benchmarks
 
 Every figure is a mean over repeated runs with its spread, on the corpus
-identified by checksum `n/a`
-under profile `n/a`
-(fingerprint `n/a`).
+identified by checksum `6cb9bcd5cf640f1e`
+under profile `competition`
+(fingerprint `8163b8373fff4a3a`).
 
 | Metric | Value |
 |---|---|
-| throughput | not measured |
-| first token | not measured |
-| total per request | not measured |
-| peak RSS (whole system, official profiler) | not measured here -- LeanLM's own process excludes the model, which runs under llama-server |
-| prompt size | not measured |
-| corpus not sent to the model | not measured |
+| throughput | 12.9 tok/s (min 12.466, max 13.093, n=41) |
+| first token | 616 ms (min 113.047, max 4741.706, n=41) |
+| total per request | 7481.4 ms (min 1654.067, max 41209.542, n=41) |
+| peak RSS (whole system, official profiler) | 2025 MB (1.98 GB of a 7 GB budget) |
+| prompt size | 344 tokens (min 162.0, max 432.0, n=41) |
+| corpus not sent to the model | 0.74 (min 0.2337, max 0.9896, n=41) |
 
 ### Official profiler
 
-The official profiler has not been run yet. The figures above come from our own harness and are not a substitute.
+Measured on Intel(R) Xeon(R) Platinum 8280 CPU @ 2.70GHz with 7.8 GB, `measured_on: participant_laptop`.
+
+| Metric | Value |
+|---|---|
+| generation throughput | 12.70 tok/s |
+| peak RSS | 1.98 GB |
+| S_perf = min(TPS/15, 1) | **84.7** |
+| S_eff = (7 - peak)/7 | **71.8** |
+| arc_easy (50 samples) | 0.7 acc_norm |
+
+No thermal penalty applies: the measurement ran in a cloud instance, where the hypervisor exposes no CPU temperature. The audit environment has the same limitation.
 
 The accuracy row above is the base model's general knowledge, measured by the
 organisers' tool. The figures below measure something different: whether the
@@ -108,7 +118,14 @@ of 25 reported as 35.
 Same model, same machine, same session. The baseline is what a developer does
 before reaching for an optimization layer: put the whole corpus in the prompt.
 
-Not yet measured.
+| Metric | Whole corpus in the prompt | With retrieval | Delta |
+|---|---|---|---|
+| prompt_tokens | 978.1111 | 343.9268 | -64.84% |
+| context_tokens | 959.0 | 188.8049 | -80.31% |
+| response_grounding_rate | 0.3745 | 0.6463 | +72.58% |
+| tokens_per_second | 12.4422 | 12.8572 | +3.34% |
+| total_ms | 31345.6987 | 7481.443 | -76.13% |
+| peak_rss_mb | 31.8128 | 32.1907 | +1.19% |
 
 ## 5. Honest limits
 
@@ -122,25 +139,3 @@ Not yet measured.
   after two defects were fixed, which is evidence and not proof.
 - Thermal figures depend on sensors the machine exposes. Where none exist the
   field reads unavailable rather than a plausible number.
-
-### Official profiler
-
-Measured on Intel(R) Xeon(R) Platinum 8280 @ 2.70GHz with 7.8 GB,
-`measured_on: participant_laptop`.
-
-| Metric | Value |
-|---|---|
-| generation throughput | 12.70 tok/s |
-| peak RSS | 1.98 GB of a 7 GB budget |
-| S_perf = min(TPS/15, 1) | **84.7** |
-| S_eff = (7 - peak)/7 | **71.8** |
-| arc_easy (50 samples) | 0.70 acc_norm |
-
-No thermal penalty applies: the run was measured in a cloud instance, where the
-hypervisor exposes no CPU temperature. The audit environment has the same
-limitation.
-
-The accuracy row above is the base model's general knowledge, measured by the
-organisers' tool. The retrieval figures earlier in this report measure something
-different — whether the layer answers correctly *from a corpus*. Neither
-replaces the other.
