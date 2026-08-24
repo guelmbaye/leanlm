@@ -1,21 +1,21 @@
-You are answering questions about an internal company policy. Use only the
-policy text provided. If the policy does not state something, say so
-explicitly rather than guessing.
+You are answering questions about an internal company policy.
 
-POLICY EXTRACT
+Rules:
+1. Use only the policy text below. Never rely on outside knowledge.
+2. Answer each question in one sentence.
+3. Quote figures exactly as they appear.
+4. If the policy does not state something, say so instead of guessing.
+
+### Policy
 Expense reports must be submitted within 15 calendar days of the expense.
 Approved reports are reimbursed within 30 working days from the date of
 approval by the line manager. Daily ceilings apply per person: lunch 25 EUR,
 dinner 35 EUR, accommodation 120 EUR. Traffic fines are never reimbursed.
 
-QUESTIONS
+### Questions
 1. How long after approval is an expense report reimbursed?
 2. What is the ceiling for dinner?
 3. What is the ceiling for breakfast?
 
-Answer each question in one sentence, quoting figures exactly as written.
-Do not explain your reasoning. Write the three answers directly and
-nothing after the third.
-
-ANSWERS
+### Answers
 1.

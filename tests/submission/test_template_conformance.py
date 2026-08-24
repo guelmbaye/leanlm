@@ -249,8 +249,9 @@ class TestShippedPrompts:
         """No prompt may depend on a document the judge does not have."""
         for name, text in self._prompts().items():
             assert len(text) > 400, f"{name} is too short to carry a document"
+            # A heading introducing the material, whatever it is called.
             assert any(marker in text for marker in
-                       ("POLICY EXTRACT", "ARTICLE")), name
+                       ("### Policy", "### Clauses", "ARTICLE")), name
 
     def test_none_refers_to_excerpts_it_does_not_supply(self):
         for name, text in self._prompts().items():
@@ -270,9 +271,27 @@ class TestShippedPrompts:
         """
         joined = " ".join(self._prompts().values()).lower()
         assert "breakfast" in joined
-        assert "breakfast" not in joined.split("policy extract")[1].split(
-            "questions")[0], "the uncovered item must not appear in the extract"
+        assert "breakfast" not in joined.split("### policy")[1].split(
+            "### questions")[0], "the uncovered item must not appear in the data"
         assert "say so" in joined or "does not state" in joined
+
+    def test_the_instructions_come_before_the_data(self):
+        """A reasoning model answers when the prompt ends on the shape of the
+        answer, and comments when it ends on an instruction. Rules split around
+        the data cost two drafts."""
+        for name, text in self._prompts().items():
+            lowered = text.lower()
+            assert lowered.index("rules:") < lowered.index("###"), name
+            tail = text.rstrip().splitlines()[-1].strip()
+            assert tail in ("1.", "-"), f"{name} must end on the answer shape"
+
+    def test_no_instruction_about_not_reasoning(self):
+        """Each one gives a reasoning model more to reason about: the draft that
+        said "nothing after the third answer" returned empty answers and a list
+        of six constraints."""
+        joined = " ".join(self._prompts().values()).lower()
+        for phrase in ("do not explain", "no reasoning", "nothing after"):
+            assert phrase not in joined, phrase
 
     def test_they_contain_neighbouring_figures(self):
         """Picking the wrong one of a neighbouring pair is the realistic

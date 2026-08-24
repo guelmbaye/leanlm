@@ -1,8 +1,13 @@
-Summarise the following contract clauses for a project manager who has five
-minutes. Produce exactly three bullet points: one on duration, one on payment,
-one on how to end the contract. Include every date and amount. Do not add
-anything the clauses do not say.
+You are summarising contract clauses for a project manager who has five minutes.
 
+Rules:
+1. Use only the clauses below. Never rely on outside knowledge.
+2. Write exactly three bullet points: one on duration, one on payment, one on
+   how to end the contract.
+3. Include every date and amount that appears.
+4. Add nothing the clauses do not say.
+
+### Clauses
 ARTICLE 3 - TERM
 This contract is entered into for a term of twelve (12) months from the date of
 signature. It renews by tacit agreement for successive periods of six (6)
@@ -17,7 +22,5 @@ ARTICLE 11 - TERMINATION
 Either party may terminate by giving three (3) months' written notice sent by
 registered letter.
 
-Write the three bullet points directly, with no preamble and no reasoning.
-
-SUMMARY
+### Summary
 -

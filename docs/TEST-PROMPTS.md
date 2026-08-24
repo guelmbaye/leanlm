@@ -111,39 +111,38 @@ instruction-following (*exactly three bullets*, one topic each), figure
 retention across a longer input, and restraint — the clauses say nothing about
 penalties for early termination, and a model that adds some has failed.
 
-## Both prompts end with an answer cue, and that is not cosmetic
+## Structure, not exhortation
 
-Tested against the bare model through `/completion`, the first draft of tp_001
-produced this:
+Three drafts were needed and the first two failed in the same direction.
 
-```
-Answer each question in one sentence, quoting figures exactly as written.
-Answer each question in one sentence, quoting figures exactly.
+**Draft 1** ended on an instruction. The model continued writing instructions,
+then reasoned for four hundred tokens and answered nothing.
 
-<think>
-Thinking Process:
-1. **Analyze the Request:** ...
-```
+**Draft 2** added an answer cue (`ANSWERS` / `1.`) and produced the three
+answers correctly -- then a trailing reasoning block.
 
-The model continued the prompt, then reasoned for four hundred tokens and was
-cut off without answering a single question.
+**Draft 3** added *"write the three answers directly and nothing after the
+third"* to suppress that block. It made things worse: the answer slots came back
+empty and the model enumerated all six constraints in a `<think>` block.
 
-LeanLM's own prompt does not have this problem, and the reason is one line: it
-ends with `### Answer`, which leaves the model nothing to do but answer. A raw
-completion prompt that ends with an instruction invites the model to keep
-writing instructions.
+The lesson is not about wording. **Every instruction about not reasoning gives a
+reasoning model more to reason about.** Draft 3 had six constraints, and the
+model dutifully listed them.
 
-So both prompts now end with an explicit cue and the first token of the expected
-shape:
+**What works is the shape LeanLM's own prompt already uses**, which gets clean
+answers from this model through the same server:
 
 ```
-ANSWERS
-1.
+instructions (all of them, first)
+### Data
+### Question
+### Answer
 ```
 
-This is worth understanding rather than copying. A judge running these prompts
-gets whatever the prompt's ending invites. Ending on an instruction invites
-commentary; ending on the shape of the answer invites the answer.
+All rules at the top, then the material, then the question, then the answer
+heading with nothing after it. Both prompts now follow that layout, and the
+anti-reasoning instructions are gone -- the structure does the work they were
+failing to do.
 
 ## Test them before submitting
 
