@@ -140,9 +140,15 @@ instructions (all of them, first)
 ```
 
 All rules at the top, then the material, then the question, then the answer
-heading with nothing after it. Both prompts now follow that layout, and the
-anti-reasoning instructions are gone -- the structure does the work they were
-failing to do.
+heading **with nothing after it**.
+
+**Draft 4** kept that layout but seeded the first item -- `### Answers` followed
+by `1.`, and `### Summary` followed by `-`. The model completed the list instead
+of filling it: it emitted `2.` and `3.` empty, then reasoned. A seeded item is a
+list to finish; a bare heading is a question to answer.
+
+Four drafts for two prompts, and every failure came from adding something. The
+prompt that works is the one with the least in it after the heading.
 
 ## Test them before submitting
 

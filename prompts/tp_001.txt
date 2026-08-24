@@ -18,4 +18,3 @@ dinner 35 EUR, accommodation 120 EUR. Traffic fines are never reimbursed.
 3. What is the ceiling for breakfast?
 
 ### Answers
-1.

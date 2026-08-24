@@ -282,8 +282,13 @@ class TestShippedPrompts:
         for name, text in self._prompts().items():
             lowered = text.lower()
             assert lowered.index("rules:") < lowered.index("###"), name
+            # End on the *heading*, with nothing after it. A seeded first item
+            # ("1." or "-") was completed as an empty list -- the model emitted
+            # "2." and "3." and then reasoned. LeanLM's own working prompt ends
+            # with "### Answer" and no seed.
             tail = text.rstrip().splitlines()[-1].strip()
-            assert tail in ("1.", "-"), f"{name} must end on the answer shape"
+            assert tail.startswith("###"), f"{name} must end on the answer heading"
+            assert tail not in ("1.", "-"), f"{name} must not seed the first item"
 
     def test_no_instruction_about_not_reasoning(self):
         """Each one gives a reasoning model more to reason about: the draft that
