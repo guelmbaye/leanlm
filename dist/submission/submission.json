@@ -1,0 +1,86 @@
+{
+  "schema_version": "1.1.0",
+  "profiler_version": "adtc-profiler 0.1.0",
+  "submission": {
+    "team_id": "leanlm",
+    "domain": "corporate_enterprise",
+    "language_scope": [
+      "en",
+      "fr"
+    ],
+    "african_alpha_claim": true,
+    "budget_laptop_claim": true,
+    "submitter": {
+      "name": "Guelmbaye Firmin DJIKOLOUM",
+      "email": "fdjikoloum@gmail.com",
+      "github_handle": "guelmbaye"
+    },
+    "cross_disciplinary_pairing": {
+      "discipline": "enterprise knowledge management",
+      "load_bearing": true,
+      "description": "Answers questions about internal policy documents offline, on the laptop staff already have, with every sentence traced to its source paragraph."
+    },
+    "test_prompts": [
+      {
+        "prompt_id": "tp_001",
+        "prompt": "You are answering questions about an internal company policy.\n\nRules:\n1. Use only the policy text below. Never rely on outside knowledge.\n2. Answer each question in one sentence.\n3. Quote figures exactly as they appear.\n4. If the policy does not cover a question, answer that it does\n   not cover it. Never guess.\n\n### Policy\nExpense reports must be submitted within 15 calendar days of the expense.\nApproved reports are reimbursed within 30 working days from the date of\napproval by the line manager. Daily ceilings apply per person: lunch 25 EUR,\ndinner 35 EUR, accommodation 120 EUR. Traffic fines are never reimbursed.\n\n### Questions\n1. How long after approval is an expense report reimbursed?\n2. What is the ceiling for dinner?\n3. What is the ceiling for breakfast?\n\n### Answers"
+      },
+      {
+        "prompt_id": "tp_002",
+        "prompt": "You are answering questions about a service contract.\n\nRules:\n1. Use only the clauses below. Never rely on outside knowledge.\n2. Answer each question in one sentence.\n3. Quote figures exactly as they appear.\n4. If the clauses do not cover a question, answer that they do\n   not cover it. Never guess.\n\n### Clauses\nARTICLE 3 - TERM\nThis contract is entered into for a term of twelve (12) months from the date of\nsignature. It renews by tacit agreement for successive periods of six (6)\nmonths.\n\nARTICLE 5 - PAYMENT TERMS\nInvoices are payable within 45 days end of month. Late payment incurs a penalty\nat three times the statutory interest rate, plus a flat recovery indemnity of\n40 EUR.\n\nARTICLE 11 - TERMINATION\nEither party may terminate by giving three (3) months' written notice sent by\nregistered letter.\n\n### Questions\n1. How long is the initial term, and how long is each renewal?\n2. What flat indemnity applies to a late payment?\n3. What notice must a party give to terminate?\n4. What penalty applies to terminating before the end of the term?\n\n### Answers"
+      }
+    ],
+    "model": {
+      "name": "qwen3.5-2b",
+      "runtime": "llama.cpp",
+      "quantization": "GGUF Q4_0",
+      "parameters_estimate": "1.9B",
+      "packaging": "binary_bundle"
+    }
+  },
+  "environment": {
+    "measured_on": "participant_laptop",
+    "cpu_model": "Intel(R) Xeon(R) Platinum 8280 CPU @ 2.70GHz",
+    "ram_gb": 7.8,
+    "gpu": "none",
+    "os": "Ubuntu 24.04.4 LTS"
+  },
+  "throughput": {
+    "tokens_per_second_generation": 12.7,
+    "first_token_latency_ms": 7617.82,
+    "prompt_tokens": 512,
+    "generated_tokens": 128
+  },
+  "memory": {
+    "peak_rss_mb": 2024.73,
+    "steady_state_rss_mb": 1958.24,
+    "peak_vms_mb": 3075.98
+  },
+  "accuracy": [
+    {
+      "benchmark": "arc_easy",
+      "dataset_version": "lm-eval-harness",
+      "language": "en",
+      "samples": 50,
+      "score": 0.7,
+      "metric": "acc_norm"
+    }
+  ],
+  "cpu_thermal": {
+    "cpu_percent_p99": 100.0,
+    "core_temp_c_peak": null,
+    "throttled": false
+  },
+  "reproducibility": {
+    "git_commit_sha": "7821bc9aa8fb",
+    "docker_image_digest": "unknown",
+    "random_seed": 42
+  },
+  "model_info": {
+    "params_count": 1881825088,
+    "context_length": 262144,
+    "architecture": "qwen35",
+    "claimed_params_estimate": "1.9B",
+    "params_match": true
+  }
+}

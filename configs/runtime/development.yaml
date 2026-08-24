@@ -4,16 +4,16 @@ id: development
 version: 1.0.0
 description: Daily development. Full telemetry, simulated backend allowed.
 target_hardware: laptop-8gb
-backend: auto
+backend: llama-server
 
 model:
   id: qwen3.5-2b
-  path: models/Qwen3.5-2B-Q4_K_M.gguf
-  quantization: Q4_K_M
-  parameters: "3.8B"
+  path: models/Qwen3.5-2B-Q4_0.gguf
+  quantization: Q4_0
+  parameters: "1.9B"
   context_tokens: 4096
-  sha256: "d6bd9f4175302658c1d704e44858842606652bbe53c56cd542e31ff10d0cfd58"
-  source_url: "https://huggingface.co/openresearchtools/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf"
+  sha256: "cd70221bebaee0503e0f6717e174250cd7825aa88438b3aabec9ad55731d9bb1"
+  source_url: "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_0.gguf"
   license: "Apache-2.0"
 
 memory:

@@ -1,0 +1,11 @@
+# Model weights are downloaded by download_model.sh, never committed.
+*.gguf
+model/
+!model/.gitkeep
+
+__pycache__/
+*.py[cod]
+.venv/
+submission.json
+audit.json
+verdict.json
