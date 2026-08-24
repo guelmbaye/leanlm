@@ -272,11 +272,20 @@ class TestShippedPrompts:
         subject, and that is ambiguous to score. `breakfast` sits parallel to the
         ceilings that are listed and has no such neighbour.
         """
-        joined = " ".join(self._prompts().values()).lower()
+        # Whitespace-normalised: a rule that wraps across two lines is the same
+        # rule, and an assertion that depends on where it wraps tests the
+        # formatting rather than the content.
+        joined = " ".join(" ".join(self._prompts().values()).split()).lower()
         assert "breakfast" in joined
         assert "breakfast" not in joined.split("### policy")[1].split(
             "### questions")[0], "the uncovered item must not appear in the data"
-        assert "say so" in joined or "does not state" in joined
+        # The rule must give a usable shape for the refusal, not just permission
+        # to refuse. "Say so" was copied literally as "The clauses do not state
+        # something" when the question was clausal rather than a noun phrase --
+        # semantically right and badly formed, which a judge scores as a poor
+        # answer rather than as calibration.
+        assert "do not cover it" in joined or "does not cover it" in joined
+        assert "say so instead of guessing" not in joined
 
     def test_the_instructions_come_before_the_data(self):
         """A reasoning model answers when the prompt ends on the shape of the

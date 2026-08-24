@@ -4,7 +4,8 @@ Rules:
 1. Use only the policy text below. Never rely on outside knowledge.
 2. Answer each question in one sentence.
 3. Quote figures exactly as they appear.
-4. If the policy does not state something, say so instead of guessing.
+4. If the policy does not cover a question, answer that it does
+   not cover it. Never guess.
 
 ### Policy
 Expense reports must be submitted within 15 calendar days of the expense.

@@ -4,7 +4,8 @@ Rules:
 1. Use only the clauses below. Never rely on outside knowledge.
 2. Answer each question in one sentence.
 3. Quote figures exactly as they appear.
-4. If the clauses do not state something, say so instead of guessing.
+4. If the clauses do not cover a question, answer that they do
+   not cover it. Never guess.
 
 ### Clauses
 ARTICLE 3 - TERM
