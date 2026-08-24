@@ -11,10 +11,11 @@ dinner 35 EUR, accommodation 120 EUR. Traffic fines are never reimbursed.
 QUESTIONS
 1. How long after approval is an expense report reimbursed?
 2. What is the ceiling for dinner?
-3. Are parking fees reimbursed?
+3. What is the ceiling for breakfast?
 
 Answer each question in one sentence, quoting figures exactly as written.
-Do not explain your reasoning. Write the three answers directly.
+Do not explain your reasoning. Write the three answers directly and
+nothing after the third.
 
 ANSWERS
 1.

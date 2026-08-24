@@ -63,9 +63,21 @@ Answer each question in one sentence, quoting figures exactly as written.
 ```
 
 Question 3 is not covered by the extract. A model that answers it invents; a
-model that says the policy does not address parking fees is doing the harder and
-more useful thing. This is the single most important behaviour for enterprise
-document work, and it is visible in one response.
+model that says the policy states no breakfast ceiling is doing the harder and
+more useful thing. This is the most important behaviour for enterprise document
+work and it is visible in a single response.
+
+**The first version of this question asked about parking fees, and that was a
+badly designed probe.** The model answered *"No, traffic fines are never
+reimbursed"* -- conflating two different things, and producing a sentence that
+reads as an answer while addressing a different subject. The fault was the
+question's: `parking fees` sits close enough to `traffic fines` that a
+conflation is almost reasonable, so the response was ambiguous to score.
+
+`breakfast` has no neighbour. The extract lists ceilings for lunch, dinner and
+accommodation; breakfast is plainly absent and plainly parallel. A model that
+invents a figure, or borrows the lunch figure, has failed unmistakably. A probe
+whose failure mode is arguable is not a probe.
 
 Questions 1 and 2 test a trap worth having: the extract contains **15 days** and
 **30 working days**, and **25** and **35 EUR**. Picking the wrong one of a

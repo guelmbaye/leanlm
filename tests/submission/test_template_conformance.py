@@ -259,10 +259,19 @@ class TestShippedPrompts:
             assert "[s1]" not in lowered, name
 
     def test_one_asks_for_something_the_context_does_not_cover(self):
-        """Calibration is the behaviour that matters most for document work,
-        and it is visible in a single response."""
+        """Calibration is the behaviour that matters most for document work, and
+        it is visible in a single response.
+
+        The uncovered item must have no near neighbour in the extract. Asking
+        about `parking fees` produced "No, traffic fines are never reimbursed" --
+        a conflation that reads as an answer while addressing a different
+        subject, and that is ambiguous to score. `breakfast` sits parallel to the
+        ceilings that are listed and has no such neighbour.
+        """
         joined = " ".join(self._prompts().values()).lower()
-        assert "parking" in joined
+        assert "breakfast" in joined
+        assert "breakfast" not in joined.split("policy extract")[1].split(
+            "questions")[0], "the uncovered item must not appear in the extract"
         assert "say so" in joined or "does not state" in joined
 
     def test_they_contain_neighbouring_figures(self):
