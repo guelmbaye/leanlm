@@ -566,6 +566,78 @@ def cmd_score(args: argparse.Namespace) -> int:
     return EXIT_NONCOMPLIANT if score.disqualified else EXIT_OK
 
 
+def _load_profiler(explicit: str | None, root: Path) -> dict[str, Any] | None:
+    """The profiler's own output, if it exists."""
+    candidates = [Path(explicit)] if explicit else [
+        root / "dist/submission/submission.json",
+        Path("submission.json"),
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            # The profiler's file, not ours: it carries an environment block.
+            if "environment" in payload and "throughput" in payload:
+                return payload
+    return None
+
+
+def cmd_devpost(args: argparse.Namespace) -> int:
+    """The two scores the submission form asks for, taken from the file.
+
+    Computing them by hand invites a mismatch between the form and the artifact,
+    and the audit compares exactly those two.
+    """
+    path = Path(args.profiler) if args.profiler else \
+        repo_root() / "dist/submission/submission.json"
+    if not path.is_file():
+        print(f"no profiler output at {path}", file=sys.stderr)
+        print("  -> adtc-profiler run --submission . --mode participant "
+              "--output submission.json", file=sys.stderr)
+        return EXIT_ERROR
+    report = json.loads(path.read_text(encoding="utf-8"))
+
+    if "sperf" in report or "seff" in report:
+        print("the profiler reports these directly; use its values:")
+        print(f"  Sperf : {report.get('sperf')}")
+        print(f"  Seff  : {report.get('seff')}")
+        return EXIT_OK
+
+    tps = (report.get("throughput") or {}).get("tokens_per_second_generation") or 0.0
+    peak_mb = (report.get("memory") or {}).get("peak_rss_mb") or 0.0
+    peak_gb = peak_mb / 1024.0
+    sperf = min(tps / 15.0, 1.0) * 100.0
+    seff = max(0.0, (7.0 - peak_gb) / 7.0) * 100.0
+    environment = report.get("environment", {})
+
+    print("Devpost — Additional info")
+    print(f"  Sperf : {sperf:.1f}      ({tps:.2f} tok/s / 15)")
+    print(f"  Seff  : {seff:.1f}      (7 GB - {peak_gb:.2f} GB) / 7 GB")
+    print()
+    print(f"  measured_on : {environment.get('measured_on')}")
+    print(f"  cpu         : {environment.get('cpu_model')}")
+    for entry in report.get("accuracy") or ():
+        print(f"  {entry.get('benchmark')} : {entry.get('score')} "
+              f"({entry.get('samples')} samples) -- the base model's general "
+              "knowledge, not the retrieval layer's accuracy")
+
+    # The form and the report must agree; the audit compares them.
+    md = path.parent / "REPORT.md"
+    if md.is_file():
+        text = md.read_text(encoding="utf-8")
+        duplicates = text.count("### Official profiler")
+        if duplicates > 1:
+            print(f"\n  ! REPORT.md contains {duplicates} 'Official profiler' "
+                  "sections. Remove the duplicate.")
+        for label, value in (("S_perf", sperf), ("S_eff", seff)):
+            if f"{value:.1f}" not in text:
+                print(f"  ! REPORT.md does not contain {label} = {value:.1f}. "
+                      "The form and the report should state the same number.")
+    return EXIT_OK
+
+
 def cmd_submission(args: argparse.Namespace) -> int:
     """Emit a package shaped by the official ADTC template."""
     from ..packages.packaging.models import (CrossDisciplinaryPairing,
@@ -619,7 +691,11 @@ def cmd_submission(args: argparse.Namespace) -> int:
         benchmark_summary=summary,
         accuracy_summary=accuracy,
         naive_comparison=comparison,
-        profiler_report=summary.get("official_profiler"),
+        # Read the official measurement directly. It used to be pulled from a
+        # key inside the campaign summary, which the profiler never writes, so
+        # the report had no figures to cite and the section was pasted in by
+        # hand -- twice, in at least one case.
+        profiler_report=_load_profiler(args.profiler, root),
         repository_url=args.repository,
         git_commit=args.commit,
     )
@@ -894,7 +970,14 @@ def build_parser() -> argparse.ArgumentParser:
     submission.add_argument("--accuracy", default=None)
     submission.add_argument("--repository", default="")
     submission.add_argument("--commit", default="")
+    submission.add_argument("--profiler", default=None,
+                            help="path to the official profiler's submission.json")
     submission.add_argument("--allow-missing-results", action="store_true")
+
+    devpost = sub.add_parser(
+        "devpost", help="the scores the submission form asks for")
+    devpost.add_argument("--profiler", default=None)
+    devpost.set_defaults(func=cmd_devpost)
     submission.set_defaults(func=cmd_submission)
 
     accuracy = sub.add_parser("accuracy", help="measure accuracy against ground truth")

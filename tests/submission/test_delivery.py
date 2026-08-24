@@ -491,3 +491,65 @@ class TestUbuntuProvisioning:
                           if not line.lstrip().startswith("#"))
         assert "llama-cpp-python" not in code
         assert "[optional,dev]" in code
+
+
+class TestDevpostValues:
+    """The form and the artifact must state the same two numbers.
+
+    The audit compares exactly those. Computing them by hand produced 71.7 where
+    the file implies 71.8 -- 2024.73 MB is 1.977 GB, and (7 - 1.977)/7 rounds up.
+    """
+
+    def _report(self, tmp_path, **overrides):
+        import json
+        payload = {
+            "environment": {"measured_on": "participant_laptop",
+                            "cpu_model": "Xeon", "ram_gb": 7.8},
+            "throughput": {"tokens_per_second_generation": 12.70},
+            "memory": {"peak_rss_mb": 2024.73},
+            "accuracy": [{"benchmark": "arc_easy", "samples": 50, "score": 0.7}],
+        }
+        payload.update(overrides)
+        path = tmp_path / "submission.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    def _run(self, path, capsys):
+        from leanlm.apps.cli import main
+        main(["devpost", "--profiler", str(path)])
+        return capsys.readouterr().out
+
+    def test_the_scores_match_the_file(self, tmp_path, capsys):
+        out = self._run(self._report(tmp_path), capsys)
+        assert "84.7" in out
+        assert "71.8" in out
+
+    def test_reaching_the_reference_saturates(self, tmp_path, capsys):
+        path = self._report(
+            tmp_path, throughput={"tokens_per_second_generation": 20.0})
+        assert "100.0" in self._run(path, capsys)
+
+    def test_a_duplicated_section_is_flagged(self, tmp_path, capsys):
+        path = self._report(tmp_path)
+        (tmp_path / "REPORT.md").write_text(
+            "### Official profiler\n\n### Official profiler\n", encoding="utf-8")
+        assert "Remove the duplicate" in self._run(path, capsys)
+
+    def test_a_report_that_disagrees_is_flagged(self, tmp_path, capsys):
+        path = self._report(tmp_path)
+        (tmp_path / "REPORT.md").write_text(
+            "### Official profiler\nS_perf 99.9\n", encoding="utf-8")
+        assert "should state the same number" in self._run(path, capsys)
+
+    def test_an_agreeing_report_is_silent(self, tmp_path, capsys):
+        path = self._report(tmp_path)
+        (tmp_path / "REPORT.md").write_text(
+            "### Official profiler\nS_perf 84.7 and S_eff 71.8\n", encoding="utf-8")
+        out = self._run(path, capsys)
+        assert "!" not in out
+
+    def test_the_accuracy_row_is_labelled(self, tmp_path, capsys):
+        """Two accuracy figures measure different things; adding them is
+        meaningless."""
+        out = self._run(self._report(tmp_path), capsys)
+        assert "not the retrieval layer" in out
