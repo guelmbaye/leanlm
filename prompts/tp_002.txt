@@ -1,11 +1,10 @@
-You are summarising contract clauses for a project manager who has five minutes.
+You are answering questions about a service contract.
 
 Rules:
 1. Use only the clauses below. Never rely on outside knowledge.
-2. Write exactly three bullet points: one on duration, one on payment, one on
-   how to end the contract.
-3. Include every date and amount that appears.
-4. Add nothing the clauses do not say.
+2. Answer each question in one sentence.
+3. Quote figures exactly as they appear.
+4. If the clauses do not state something, say so instead of guessing.
 
 ### Clauses
 ARTICLE 3 - TERM
@@ -22,4 +21,10 @@ ARTICLE 11 - TERMINATION
 Either party may terminate by giving three (3) months' written notice sent by
 registered letter.
 
-### Summary
+### Questions
+1. How long is the initial term, and how long is each renewal?
+2. What flat indemnity applies to a late payment?
+3. What notice must a party give to terminate?
+4. What penalty applies to terminating before the end of the term?
+
+### Answers

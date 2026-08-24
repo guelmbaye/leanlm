@@ -252,6 +252,9 @@ class TestShippedPrompts:
             # A heading introducing the material, whatever it is called.
             assert any(marker in text for marker in
                        ("### Policy", "### Clauses", "ARTICLE")), name
+            # Both prompts share the shape that works, so a failure in one is
+            # informative about the other rather than a separate mystery.
+            assert "### Questions" in text and "### Answers" in text, name
 
     def test_none_refers_to_excerpts_it_does_not_supply(self):
         for name, text in self._prompts().items():

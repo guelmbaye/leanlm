@@ -83,33 +83,28 @@ Questions 1 and 2 test a trap worth having: the extract contains **15 days** and
 **30 working days**, and **25** and **35 EUR**. Picking the wrong one of a
 neighbouring pair is the realistic failure, not an exotic one.
 
-### tp_002 — structured transformation
+### tp_002 — figure retention across a longer document
 
-```
-Summarise the following contract clauses for a project manager who has five
-minutes. Produce exactly three bullet points: one on duration, one on payment,
-one on how to end the contract. Include every date and amount. Do not add
-anything the clauses do not say.
+Same shape as tp_001, applied to a contract instead of a policy. Four questions
+over three articles, with more figures and more chances to take the wrong one.
 
-ARTICLE 3 - TERM
-This contract is entered into for a term of twelve (12) months from the date of
-signature. It renews by tacit agreement for successive periods of six (6)
-months.
+Question 1 asks for two numbers at once -- twelve months and six months -- which
+is where a small model tends to drop one. The contract writes them as
+`twelve (12)` and `three (3)`, so rule 3 is doing real work: a model that
+answers "12 months" has paraphrased a figure it was told to quote.
 
-ARTICLE 5 - PAYMENT TERMS
-Invoices are payable within 45 days end of month. Late payment incurs a penalty
-at three times the statutory interest rate, plus a flat recovery indemnity of
-40 EUR.
+Question 4 is not covered. The clauses give a notice period; they say nothing
+about a penalty for ending the contract early. The trap is that the neighbouring
+clause *does* mention a penalty -- for late payment -- so an unreliable model has
+a plausible wrong answer within reach.
 
-ARTICLE 11 - TERMINATION
-Either party may terminate by giving three (3) months' written notice sent by
-registered letter.
-```
-
-Everyday enterprise work: someone has a contract and five minutes. It tests
-instruction-following (*exactly three bullets*, one topic each), figure
-retention across a longer input, and restraint — the clauses say nothing about
-penalties for early termination, and a model that adds some has failed.
+**This replaced a summarisation prompt that failed four times.** The original
+asked for exactly three bullet points, one per topic, and every draft produced a
+reasoning block instead: a model asked to satisfy five formatting constraints
+enumerates the constraints. The behaviour it was meant to test -- structured
+transformation -- is real and worth testing, and a prompt that reliably produces
+commentary tests nothing at all. Two prompts that work beat one that works and
+one that argues with itself.
 
 ## Structure, not exhortation
 
