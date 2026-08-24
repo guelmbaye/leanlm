@@ -127,6 +127,12 @@ before reaching for an optimization layer: put the whole corpus in the prompt.
 | total_ms | 31345.6987 | 7481.443 | -76.13% |
 | peak_rss_mb | 31.8128 | 32.1907 | +1.19% |
 
+Asked *"What is the current share price of Tesla?"* against a corpus of HR
+policies, the model without the layer answered **240 EUR** — an invented price,
+grounding 0.0, four runs out of four. LeanLM declines the same question. That
+corpus fits entirely inside the context window, so this is not a retrieval
+trick: the model invents when nothing stops it.
+
 ## 5. Honest limits
 
 - Grounding is checked by n-gram overlap against the passages sent. It catches
